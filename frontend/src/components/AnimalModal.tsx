@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { animalesService } from '../api/animales';
-import type { Animal, AnimalCreate } from '../types/animal';
+import type { Animal } from '../types/animal';
 
 interface AnimalModalProps {
   isOpen: boolean;
