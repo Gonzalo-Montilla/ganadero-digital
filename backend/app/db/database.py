@@ -62,6 +62,9 @@ def init_db():
             finca = Finca(
                 nombre="Hacienda Málaga",
                 nit="123456789",
+                departamento="Caldas",
+                municipio="Río Sucio",
+                vereda="Pueblo Viejo",
                 direccion="Vereda Pueblo Viejo, Río Sucio, Caldas",
                 telefono="+57 316 3882979",
                 email="admin@mifinca.com"
