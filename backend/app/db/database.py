@@ -79,7 +79,7 @@ def init_db():
                 hashed_password=get_password_hash("password123"),
                 rol="propietario",
                 finca_id=finca.id,
-                is_active=True
+                activo=True
             )
             db.add(usuario)
             db.commit()
