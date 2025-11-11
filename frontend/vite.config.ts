@@ -12,5 +12,9 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 4173,
     strictPort: false,
+    allowedHosts: [
+      '.railway.app',
+      'zesty-luck-production-8eb4.up.railway.app'
+    ],
   },
 })
