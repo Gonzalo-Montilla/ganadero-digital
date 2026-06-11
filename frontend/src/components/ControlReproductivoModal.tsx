@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { reproductivosService } from '../api/reproductivos';
 import { animalesService } from '../api/animales';
 import type { ControlReproductivo, ControlReproductivoCreate } from '../types/reproductivo';
 import type { Animal } from '../types/animal';
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
+import { Baby, Microscope, SquarePen, Stethoscope, Syringe } from 'lucide-react';
 
 interface ControlReproductivoModalProps {
   isOpen: boolean;
@@ -12,6 +14,9 @@ interface ControlReproductivoModalProps {
 }
 
 export default function ControlReproductivoModal({ isOpen, onClose, onSave, control }: ControlReproductivoModalProps) {
+  const modalTitleId = 'control-reproductivo-modal-title';
+  const modalRef = useRef<HTMLDivElement>(null);
+  const initialFocusRef = useRef<HTMLSelectElement>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [hembras, setHembras] = useState<Animal[]>([]);
@@ -46,6 +51,8 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
       loadAnimales();
     }
   }, [isOpen]);
+
+  useModalFocusTrap(isOpen, onClose, modalRef, initialFocusRef);
 
   useEffect(() => {
     if (control) {
@@ -105,7 +112,7 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
 
   const loadAnimales = async () => {
     try {
-      const response = await animalesService.getAnimales({ estado: 'activo', limit: 1000 });
+      const response = await animalesService.getAnimalesAll({ estado: 'activo' });
       const hembrasFiltered = response.items.filter(a => a.sexo === 'hembra');
       const machosFiltered = response.items.filter(a => a.sexo === 'macho');
       setHembras(hembrasFiltered);
@@ -165,20 +172,40 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
   const tipoEvento = formData.tipo_evento;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
+    <div
+      className="gd-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 p-4 backdrop-blur-sm"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        ref={modalRef}
+        className="gd-modal-panel gd-modal-surface max-w-4xl max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={modalTitleId}
+      >
+        <div className="gd-modal-body p-6">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-2xl font-bold text-gray-900">
+            <h2 id={modalTitleId} className="flex items-center gap-2 text-2xl font-extrabold text-slate-900">
+              {control ? (
+                <SquarePen className="h-6 w-6 text-brand-700" />
+              ) : (
+                <Baby className="h-6 w-6 text-brand-700" />
+              )}
               {control ? 'Editar Registro Reproductivo' : 'Nuevo Registro Reproductivo'}
             </h2>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <button
+              onClick={onClose}
+              className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              aria-label="Cerrar modal"
+            >
               ✕
             </button>
           </div>
 
           {error && (
-            <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+            <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-700">
               {error}
             </div>
           )}
@@ -187,14 +214,15 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
             {/* Hembra y Tipo de Evento */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="mb-1 block text-sm font-semibold text-slate-700">
                   Hembra *
                 </label>
                 <select
+                  ref={initialFocusRef}
                   required
                   value={formData.animal_id}
                   onChange={(e) => setFormData({ ...formData, animal_id: e.target.value })}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
+                  className="gd-input"
                 >
                   <option value="">Seleccionar hembra</option>
                   {hembras.map((animal) => (
@@ -206,21 +234,21 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="mb-1 block text-sm font-semibold text-slate-700">
                   Tipo de Evento *
                 </label>
                 <select
                   required
                   value={formData.tipo_evento}
                   onChange={(e) => setFormData({ ...formData, tipo_evento: e.target.value })}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
+                  className="gd-input"
                 >
-                  <option value="servicio">🐂 Servicio/Monta</option>
-                  <option value="diagnostico">🔬 Diagnóstico</option>
-                  <option value="parto">🍼 Parto</option>
-                  <option value="aborto">❌ Aborto</option>
-                  <option value="secado">🚫 Secado</option>
-                  <option value="otro">📋 Otro</option>
+                  <option value="servicio">Servicio/Monta</option>
+                  <option value="diagnostico">Diagnóstico</option>
+                  <option value="parto">Parto</option>
+                  <option value="aborto">Aborto</option>
+                  <option value="secado">Secado</option>
+                  <option value="otro">Otro</option>
                 </select>
               </div>
             </div>
@@ -243,7 +271,10 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
             {tipoEvento === 'servicio' && (
               <>
                 <div className="border-t pt-4">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">📋 Datos del Servicio</h3>
+                  <h3 className="mb-3 flex items-center gap-2 text-lg font-semibold text-gray-900">
+                    <Syringe className="h-4 w-4 text-brand-700" />
+                    Datos del Servicio
+                  </h3>
                   
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -333,7 +364,10 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
             {tipoEvento === 'diagnostico' && (
               <>
                 <div className="border-t pt-4">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">🔬 Datos del Diagnóstico</h3>
+                  <h3 className="mb-3 flex items-center gap-2 text-lg font-semibold text-gray-900">
+                    <Microscope className="h-4 w-4 text-brand-700" />
+                    Datos del Diagnóstico
+                  </h3>
                   
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -346,9 +380,9 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
                         className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
                       >
                         <option value="">Seleccionar</option>
-                        <option value="prenada">✅ Preñada</option>
-                        <option value="vacia">❌ Vacía</option>
-                        <option value="dudosa">❓ Dudosa</option>
+                        <option value="prenada">Preñada</option>
+                        <option value="vacia">Vacía</option>
+                        <option value="dudosa">Dudosa</option>
                       </select>
                     </div>
 
@@ -405,7 +439,10 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
             {tipoEvento === 'parto' && (
               <>
                 <div className="border-t pt-4">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">🍼 Datos del Parto</h3>
+                  <h3 className="mb-3 flex items-center gap-2 text-lg font-semibold text-gray-900">
+                    <Stethoscope className="h-4 w-4 text-brand-700" />
+                    Datos del Parto
+                  </h3>
                   
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -468,9 +505,9 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
                         className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
                       >
                         <option value="">Seleccionar</option>
-                        <option value="macho">♂ Macho</option>
-                        <option value="hembra">♀ Hembra</option>
-                        <option value="multiple">🔄 Múltiple</option>
+                        <option value="macho">Macho</option>
+                        <option value="hembra">Hembra</option>
+                        <option value="multiple">Múltiple</option>
                       </select>
                     </div>
 
@@ -500,9 +537,9 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
                       className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
                     >
                       <option value="">Seleccionar</option>
-                      <option value="viva">✅ Viva</option>
-                      <option value="muerta">❌ Muerta</option>
-                      <option value="debil">⚠️ Débil</option>
+                      <option value="viva">Viva</option>
+                      <option value="muerta">Muerta</option>
+                      <option value="debil">Débil</option>
                     </select>
                   </div>
                 </div>
@@ -561,14 +598,14 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                className="gd-btn-secondary"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
                 disabled={loading}
-                className="px-4 py-2 bg-pink-600 text-white rounded-md hover:bg-pink-700 disabled:opacity-50"
+                className="gd-btn-primary disabled:opacity-60"
               >
                 {loading ? 'Guardando...' : 'Guardar'}
               </button>

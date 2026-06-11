@@ -5,7 +5,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (auth, fincas, animales, sync, 
                                      control_sanitario, control_reproductivo,
-                                     produccion, transacciones, dashboard, imagenes)
+                                     produccion, transacciones, dashboard, imagenes, usuarios, notificaciones, media)
 
 api_router = APIRouter()
 
@@ -17,5 +17,8 @@ api_router.include_router(control_reproductivo.router, prefix="/control-reproduc
 api_router.include_router(produccion.router, prefix="/produccion", tags=["produccion"])
 api_router.include_router(transacciones.router, prefix="/transacciones", tags=["transacciones"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
+api_router.include_router(usuarios.router, prefix="/usuarios", tags=["usuarios"])
+api_router.include_router(notificaciones.router, prefix="/notificaciones", tags=["notificaciones"])
 api_router.include_router(imagenes.router, prefix="/imagenes", tags=["imagenes"])
+api_router.include_router(media.router, prefix="/media", tags=["media"])
 api_router.include_router(sync.router, prefix="/sync", tags=["synchronization"])

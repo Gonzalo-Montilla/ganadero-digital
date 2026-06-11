@@ -50,4 +50,4 @@ class Transaccion(BaseModel):
     animal = relationship("Animal")
     
     def __repr__(self):
-        return f"<Transaccion(id={self.id}, tipo={self.tipo_transaccion}, valor={self.valor})>"
+        return f"<Transaccion(id={self.id}, tipo={self.tipo}, monto={self.monto})>"

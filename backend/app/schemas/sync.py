@@ -42,6 +42,7 @@ class SyncResponse(BaseModel):
     conflicts: List[SyncConflict] = []
     updates_from_server: List[Dict[str, Any]] = []
     message: str
+    errors: List[str] = []
 
 
 class SyncStats(BaseModel):

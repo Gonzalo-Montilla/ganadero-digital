@@ -13,6 +13,7 @@ from app.core.security import (
     create_refresh_token,
     decode_token
 )
+from app.core.config import settings
 from app.models.usuario import Usuario
 from app.models.finca import Finca
 from app.schemas.auth import (
@@ -34,8 +35,15 @@ def register(
 ):
     """
     Registrar nuevo usuario y crear su finca.
-    El primer usuario de una finca es automáticamente propietario.
+    En modo single-tenant solo se permite si no hay usuarios (bootstrap inicial)
+    o si ALLOW_PUBLIC_REGISTRATION=true.
     """
+    total_usuarios = db.query(Usuario).count()
+    if total_usuarios > 0 and not settings.ALLOW_PUBLIC_REGISTRATION:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registro público deshabilitado. Solicite acceso al administrador de la finca."
+        )
     # Verificar si el email ya existe
     existing_user = db.query(Usuario).filter(Usuario.email == user_data.email).first()
     if existing_user:
@@ -175,7 +183,15 @@ def refresh_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token inválido"
         )
-    
+
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido"
+        )
+
     # Buscar usuario
     user = db.query(Usuario).filter(Usuario.id == user_id).first()
     if not user or not user.activo:

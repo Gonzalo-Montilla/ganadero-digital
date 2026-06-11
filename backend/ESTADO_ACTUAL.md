@@ -71,8 +71,8 @@
 - ✅ Campos de sincronización offline incluidos
 
 ### 7. Usuario de Prueba Creado
-- Email: `admin@mifinca.com`
-- Password: `password123`
+- Email: `admin@example.com`
+- Password: `ChangeMe123!`
 - Finca: "Finca El Paraiso"
 - Ubicación: Antioquia, Medellín
 - Rol: Propietario
@@ -108,7 +108,7 @@
 GET /api/v1/auth/me → 200 OK
 {
   "id": 1,
-  "email": "admin@mifinca.com",
+  "email": "admin@example.com",
   "nombre_completo": "Juan Perez",
   "rol": "propietario",
   "finca_id": 1,
@@ -224,7 +224,7 @@ $env:PGPASSWORD="postgres"; & "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U p
 Invoke-RestMethod -Uri http://localhost:8000/health
 
 # Login
-$loginBody = "username=admin@mifinca.com&password=password123"
+$loginBody = "username=admin@example.com&password=ChangeMe123!"
 $response = Invoke-RestMethod -Uri http://localhost:8000/api/v1/auth/login -Method Post -Body $loginBody -ContentType "application/x-www-form-urlencoded"
 $token = $response.access_token
 Write-Host "Token: $token"
@@ -305,8 +305,8 @@ Invoke-RestMethod -Uri http://localhost:8000/api/v1/auth/me -Headers $headers
 - Password: postgres
 
 **Usuario de Prueba:**
-- Email: admin@mifinca.com
-- Password: password123
+- Email: admin@example.com
+- Password: ChangeMe123!
 - Finca ID: 1
 - Usuario ID: 1
 

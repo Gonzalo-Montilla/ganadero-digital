@@ -62,7 +62,7 @@ export interface AnimalUpdate {
 
 export interface AnimalesListResponse {
   total: number;
+  page: number;
+  page_size: number;
   items: Animal[];
-  skip: number;
-  limit: number;
 }

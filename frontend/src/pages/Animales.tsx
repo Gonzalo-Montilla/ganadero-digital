@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { animalesService } from '../api/animales';
 import type { Animal } from '../types/animal';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
 import AnimalModal from '../components/AnimalModal';
 import AnimalDetailsModal from '../components/AnimalDetailsModal';
+import AppShell from '../components/AppShell';
+import { Beef } from 'lucide-react';
 
 export default function Animales() {
+  const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
   const [animales, setAnimales] = useState<Animal[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -14,8 +16,10 @@ export default function Animales() {
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [selectedAnimal, setSelectedAnimal] = useState<Animal | null>(null);
   const [filtroEstado, setFiltroEstado] = useState<string>('activo');
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [loteDestino, setLoteDestino] = useState('');
+  const [potreroDestino, setPotreroDestino] = useState('');
   const { user, logout } = useAuth();
-  const navigate = useNavigate();
 
   useEffect(() => {
     loadAnimales();
@@ -24,13 +28,14 @@ export default function Animales() {
   const loadAnimales = async () => {
     try {
       setLoading(true);
-      const params: any = { limit: 200 };
+      const params: { estado?: string } = {};
       if (filtroEstado !== 'todos') {
         params.estado = filtroEstado;
       }
-      const response = await animalesService.getAnimales(params);
+      const response = await animalesService.getAnimalesAll(params);
       setAnimales(response.items);
-      setTotal(response.items.length);
+      setTotal(response.total);
+      setSelectedIds([]);
     } catch (error) {
       console.error('Error loading animales:', error);
     } finally {
@@ -57,9 +62,37 @@ export default function Animales() {
     }
   };
 
-  const handleView = (animal: Animal) => {
-    setSelectedAnimal(animal);
+  const handleView = async (animal: Animal) => {
+    try {
+      const freshAnimal = await animalesService.getAnimal(animal.id);
+      setSelectedAnimal(freshAnimal);
+    } catch (error) {
+      console.error('Error loading animal details:', error);
+      setSelectedAnimal(animal);
+    }
     setIsDetailsModalOpen(true);
+  };
+
+  const toggleSelected = (animalId: number) => {
+    setSelectedIds((prev) =>
+      prev.includes(animalId) ? prev.filter((id) => id !== animalId) : [...prev, animalId]
+    );
+  };
+
+  const handleBulkMove = async () => {
+    if (selectedIds.length === 0) {
+      alert('Selecciona al menos un animal');
+      return;
+    }
+    try {
+      await animalesService.moverLote(selectedIds, loteDestino || undefined, potreroDestino || undefined);
+      setLoteDestino('');
+      setPotreroDestino('');
+      await loadAnimales();
+    } catch (error) {
+      console.error('Error en movimiento masivo:', error);
+      alert('No se pudo mover el lote seleccionado');
+    }
   };
 
   const formatDate = (dateStr: string | null) => {
@@ -68,205 +101,135 @@ export default function Animales() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Header */}
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => navigate('/dashboard')}
-              className="text-gray-600 hover:text-gray-900"
-            >
-              ← Volver
-            </button>
-            <h1 className="text-2xl font-bold text-gray-900">🐄 Animales</h1>
+    <AppShell
+      title="Inventario de Animales"
+      subtitle="Consulta rapida y movimientos por lote"
+      userName={user?.nombre_completo}
+      role={user?.rol}
+      onLogout={logout}
+      online={isOnline}
+      rightSlot={
+        <button
+          onClick={() => {
+            setSelectedAnimal(null);
+            setIsModalOpen(true);
+          }}
+          className="gd-btn-primary !py-2"
+        >
+          + Nuevo animal
+        </button>
+      }
+    >
+      <section className="gd-card mb-5 p-4 md:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-sm text-slate-500">Total visibles</p>
+            <p className="text-3xl font-extrabold text-slate-900">{total}</p>
           </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600">
-              {user?.nombre_completo}
-            </span>
-            <button
-              onClick={logout}
-              className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md"
-            >
-              Cerrar Sesión
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
-        {/* Stats y Filtros */}
-        <div className="mb-6 bg-white rounded-lg shadow p-4">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-sm text-gray-600">Total de Animales</p>
-              <p className="text-3xl font-bold text-gray-900">{total}</p>
-            </div>
-            <button
-              onClick={() => {
-                setSelectedAnimal(null);
-                setIsModalOpen(true);
-              }}
-              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
-            >
-              + Nuevo Animal
-            </button>
-          </div>
-          
-          {/* Filtros de Estado */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => setFiltroEstado('activo')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition ${
-                filtroEstado === 'activo'
-                  ? 'bg-green-600 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              ✅ Activos
-            </button>
-            <button
-              onClick={() => setFiltroEstado('vendido')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition ${
-                filtroEstado === 'vendido'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              💸 Vendidos
-            </button>
-            <button
-              onClick={() => setFiltroEstado('muerto')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition ${
-                filtroEstado === 'muerto'
-                  ? 'bg-red-600 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              ⚰️ Muertos
-            </button>
-            <button
-              onClick={() => setFiltroEstado('todos')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition ${
-                filtroEstado === 'todos'
-                  ? 'bg-purple-600 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              📊 Todos
-            </button>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { key: 'activo', label: 'Activos' },
+              { key: 'vendido', label: 'Vendidos' },
+              { key: 'muerto', label: 'Muertos' },
+              { key: 'todos', label: 'Todos' },
+            ].map((item) => (
+              <button
+                key={item.key}
+                onClick={() => setFiltroEstado(item.key)}
+                className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                  filtroEstado === item.key ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Tabla */}
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          {loading ? (
-            <div className="p-8 text-center text-gray-600">Cargando...</div>
-          ) : animales.length === 0 ? (
-            <div className="p-8 text-center text-gray-600">
-              <p className="text-xl mb-4">🐄</p>
-              <p>No hay animales registrados</p>
-              <p className="text-sm text-gray-500 mt-2">
-                Crea tu primer animal usando el botón "Nuevo Animal"
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Número
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Nombre
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Sexo
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Raza
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Categoría
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Fecha Nac.
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Estado
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Acciones
-                    </th>
+        <div className="mt-4 grid gap-2 md:grid-cols-3">
+          <input value={loteDestino} onChange={(e) => setLoteDestino(e.target.value)} placeholder="Lote destino" className="gd-input" />
+          <input
+            value={potreroDestino}
+            onChange={(e) => setPotreroDestino(e.target.value)}
+            placeholder="Potrero destino"
+            className="gd-input"
+          />
+          <button onClick={handleBulkMove} className="gd-btn-secondary">
+            Mover seleccionados ({selectedIds.length})
+          </button>
+        </div>
+      </section>
+
+      <section className="gd-card overflow-hidden">
+        {loading ? (
+          <div className="p-8 text-center text-sm font-semibold text-slate-600">Cargando animales...</div>
+        ) : animales.length === 0 ? (
+          <div className="p-10 text-center">
+            <Beef className="mx-auto h-12 w-12 text-brand-700" />
+            <p className="mt-2 font-semibold text-slate-700">No hay animales registrados.</p>
+            <p className="text-sm text-slate-500">Crea el primero para empezar el control de campo.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Sel.</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Chapeta</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Nombre</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Sexo</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Raza</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Categoria</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">F. nacimiento</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Estado</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {animales.map((animal) => (
+                  <tr key={animal.id} className="hover:bg-brand-50/40">
+                    <td className="px-4 py-3">
+                      <input type="checkbox" checked={selectedIds.includes(animal.id)} onChange={() => toggleSelected(animal.id)} />
+                    </td>
+                    <td className="px-4 py-3 text-sm font-bold text-slate-900">{animal.numero_identificacion}</td>
+                    <td className="px-4 py-3 text-sm text-slate-700">{animal.nombre || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600">{animal.sexo === 'macho' ? 'Macho' : 'Hembra'}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600">{animal.raza}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600">{animal.categoria || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600">{formatDate(animal.fecha_nacimiento)}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`gd-pill ${
+                          animal.estado === 'activo'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : animal.estado === 'vendido'
+                            ? 'bg-sky-100 text-sky-700'
+                            : animal.estado === 'muerto'
+                            ? 'bg-rose-100 text-rose-700'
+                            : 'bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        {animal.estado}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      <button onClick={() => handleView(animal)} className="mr-3 font-semibold text-brand-700 hover:text-brand-900">
+                        Ver
+                      </button>
+                      <button onClick={() => handleEdit(animal)} className="mr-3 font-semibold text-sky-700 hover:text-sky-900">
+                        Editar
+                      </button>
+                      <button onClick={() => handleDelete(animal)} className="font-semibold text-rose-700 hover:text-rose-900">
+                        Eliminar
+                      </button>
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {animales.map((animal) => (
-                    <tr key={animal.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {animal.numero_identificacion}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {animal.nombre || '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                        {animal.sexo === 'macho' ? '♂ Macho' : '♀ Hembra'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                        {animal.raza}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                        {animal.categoria || '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                        {formatDate(animal.fecha_nacimiento)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span
-                          className={`px-2 py-1 text-xs rounded-full ${
-                            animal.estado === 'activo'
-                              ? 'bg-green-100 text-green-800'
-                              : animal.estado === 'vendido'
-                              ? 'bg-blue-100 text-blue-800'
-                              : animal.estado === 'muerto'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-gray-100 text-gray-800'
-                          }`}
-                        >
-                          {animal.estado}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                        <button
-                          onClick={() => handleView(animal)}
-                          className="text-blue-600 hover:text-blue-900 mr-3"
-                        >
-                          Ver
-                        </button>
-                        <button
-                          onClick={() => handleEdit(animal)}
-                          className="text-green-600 hover:text-green-900 mr-3"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          onClick={() => handleDelete(animal)}
-                          className="text-red-600 hover:text-red-900"
-                        >
-                          Eliminar
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </main>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       {/* Modal Crear/Editar */}
       <AnimalModal
@@ -284,6 +247,6 @@ export default function Animales() {
         onClose={() => setIsDetailsModalOpen(false)}
         animal={selectedAnimal}
       />
-    </div>
+    </AppShell>
   );
 }

@@ -1,4 +1,6 @@
 import axios from 'axios';
+import { enqueueOperation } from '../offline/outbox';
+import { cacheGetResponse, cacheReadResponse } from '../offline/cache';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
@@ -23,9 +25,16 @@ apiClient.interceptors.request.use(
   }
 );
 
-// Interceptor para manejar errores de autenticación
+// Interceptor para manejar errores de autenticación y caché offline en lecturas
 apiClient.interceptors.response.use(
-  (response) => response,
+  async (response) => {
+    const method = String(response.config?.method || '').toLowerCase();
+    if (method === 'get') {
+      const url = String(response.config.url || '');
+      await cacheGetResponse(url, response.config.params, response.data);
+    }
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config;
 
@@ -53,6 +62,37 @@ apiClient.interceptors.response.use(
         localStorage.removeItem('refresh_token');
         window.location.href = '/login';
         return Promise.reject(refreshError);
+      }
+    }
+
+    // Offline-first: guardar escrituras cuando no hay conectividad.
+    const method = String(originalRequest?.method || '').toLowerCase();
+    const isWrite = method === 'post' || method === 'put' || method === 'patch' || method === 'delete';
+    const isReplay = Boolean(originalRequest?.headers?.['x-offline-replay']);
+    const networkIssue = !error.response;
+    const requestUrl = String(originalRequest?.url || '');
+    const isAuthOrMedia = requestUrl.includes('/auth/') || requestUrl.includes('/imagenes/');
+    if (isWrite && !isReplay && networkIssue && !isAuthOrMedia) {
+      await enqueueOperation(method as 'post' | 'put' | 'patch' | 'delete', originalRequest.url, originalRequest.data);
+      return Promise.resolve({
+        data: { queued: true, offline: true },
+        status: 202,
+        statusText: 'Accepted (queued offline)',
+        headers: {},
+        config: originalRequest,
+      });
+    }
+
+    if (method === 'get' && networkIssue) {
+      const cached = await cacheReadResponse(requestUrl, originalRequest?.params);
+      if (cached != null) {
+        return Promise.resolve({
+          data: cached,
+          status: 200,
+          statusText: 'OK (offline cache)',
+          headers: { 'x-offline-cache': '1' },
+          config: originalRequest,
+        });
       }
     }
 

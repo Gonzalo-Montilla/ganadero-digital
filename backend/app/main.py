@@ -3,9 +3,9 @@ Punto de entrada de FastAPI
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from app.core.config import settings
+from app.core.scheduler import detener_scheduler, iniciar_scheduler
 from app.db.database import init_db
 from app.api.v1.api import api_router
 
@@ -18,10 +18,12 @@ app = FastAPI(
 )
 
 # CORS
+_cors_origins = settings.cors_origins
+_allow_credentials = "*" not in _cors_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS,
-    allow_credentials=True,
+    allow_origins=_cors_origins if _allow_credentials else ["*"],
+    allow_credentials=_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -29,8 +31,15 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup():
-    # Inicializar DB (para desarrollo; en producción usar Alembic)
-    init_db()
+    # En producción se recomienda ejecutar solo migraciones.
+    if settings.ENVIRONMENT.lower() != "production":
+        init_db()
+    iniciar_scheduler()
+
+
+@app.on_event("shutdown")
+def on_shutdown():
+    detener_scheduler()
 
 
 @app.get("/health", tags=["health"])
@@ -42,10 +51,9 @@ def health_check():
     }
 
 
-# Servir archivos estáticos (imágenes)
+# Directorio media (archivos servidos vía /api/v1/media con auth)
 media_dir = Path("media")
 media_dir.mkdir(exist_ok=True)
-app.mount("/media", StaticFiles(directory="media"), name="media")
 
 # Incluir routers de API
 app.include_router(api_router, prefix="/api/v1")

@@ -12,6 +12,7 @@ from app.core.deps import get_current_user
 from app.models.usuario import Usuario
 from app.models.transaccion import Transaccion
 from app.models.animal import Animal
+from app.models.control_sanitario import ControlSanitario
 from app.schemas.transaccion import (
     TransaccionCreate,
     TransaccionUpdate,
@@ -23,8 +24,30 @@ from app.schemas.compra_animal import (
     CompraAnimalRequest,
     CompraAnimalResponse
 )
+from app.services.rules_engine import en_retiro_sanitario
 
 router = APIRouter()
+
+
+def _validar_retiro_sanitario_venta(db: Session, animal_id: int, finca_id: int, fecha_venta: date) -> None:
+    ultimo_control = db.query(ControlSanitario).filter(
+        ControlSanitario.animal_id == animal_id,
+        ControlSanitario.finca_id == finca_id,
+    ).order_by(ControlSanitario.fecha.desc()).first()
+    if not ultimo_control:
+        return
+
+    retiro_carne_activo = en_retiro_sanitario(
+        ultimo_control.fecha,
+        ultimo_control.dias_retiro_carne,
+        fecha_venta
+    )
+
+    if retiro_carne_activo:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se puede vender el animal: periodo de retiro sanitario de carne activo"
+        )
 
 
 @router.post("/compra-animal", response_model=CompraAnimalResponse, status_code=status.HTTP_201_CREATED)
@@ -127,6 +150,7 @@ def crear_transaccion(
         
         # Si es una VENTA, actualizar estado del animal a vendido
         if transaccion_in.tipo == "venta":
+            _validar_retiro_sanitario_venta(db, animal.id, current_user.finca_id, transaccion_in.fecha)
             animal.estado = "vendido"
             animal.fecha_salida = transaccion_in.fecha
             animal.motivo_salida = f"Venta - {transaccion_in.concepto}"
@@ -201,6 +225,63 @@ def listar_transacciones(
     return TransaccionListResponse(total=total, items=items, skip=skip, limit=limit)
 
 
+@router.get("/resumen/financiero", response_model=ResumenFinanciero)
+def obtener_resumen_financiero(
+    *,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+) -> Any:
+    """Obtener resumen financiero de la finca"""
+    total_ventas = db.query(func.sum(Transaccion.monto)).filter(
+        Transaccion.finca_id == current_user.finca_id,
+        Transaccion.tipo == "venta"
+    ).scalar() or 0.0
+
+    total_compras = db.query(func.sum(Transaccion.monto)).filter(
+        Transaccion.finca_id == current_user.finca_id,
+        Transaccion.tipo == "compra"
+    ).scalar() or 0.0
+
+    total_gastos = db.query(func.sum(Transaccion.monto)).filter(
+        Transaccion.finca_id == current_user.finca_id,
+        Transaccion.tipo == "gasto"
+    ).scalar() or 0.0
+
+    primer_dia_mes = date.today().replace(day=1)
+    ventas_mes = db.query(func.sum(Transaccion.monto)).filter(
+        Transaccion.finca_id == current_user.finca_id,
+        Transaccion.tipo == "venta",
+        Transaccion.fecha >= primer_dia_mes
+    ).scalar() or 0.0
+
+    gastos_mes = db.query(func.sum(Transaccion.monto)).filter(
+        Transaccion.finca_id == current_user.finca_id,
+        Transaccion.tipo == "gasto",
+        Transaccion.fecha >= primer_dia_mes
+    ).scalar() or 0.0
+
+    gastos_por_cat = db.query(
+        Transaccion.categoria_gasto,
+        func.sum(Transaccion.monto).label("total")
+    ).filter(
+        Transaccion.finca_id == current_user.finca_id,
+        Transaccion.tipo == "gasto",
+        Transaccion.categoria_gasto.isnot(None)
+    ).group_by(Transaccion.categoria_gasto).all()
+
+    gasto_por_categoria = {cat: float(total) for cat, total in gastos_por_cat}
+
+    return ResumenFinanciero(
+        total_ventas=float(total_ventas),
+        total_compras=float(total_compras),
+        total_gastos=float(total_gastos),
+        balance_neto=float(total_ventas - total_compras - total_gastos),
+        ventas_mes_actual=float(ventas_mes),
+        gastos_mes_actual=float(gastos_mes),
+        gasto_por_categoria=gasto_por_categoria
+    )
+
+
 @router.get("/{transaccion_id}", response_model=TransaccionResponse)
 def obtener_transaccion(
     *,
@@ -241,16 +322,57 @@ def actualizar_transaccion(
         Transaccion.id == transaccion_id,
         Transaccion.finca_id == current_user.finca_id
     ).first()
-    
+
     if not trans:
         raise HTTPException(status_code=404, detail="Transacción no encontrada")
-    
-    for field, value in transaccion_in.model_dump(exclude_unset=True).items():
+
+    old_tipo = trans.tipo
+    old_animal_id = trans.animal_id
+    update_data = transaccion_in.model_dump(exclude_unset=True)
+
+    for field, value in update_data.items():
         setattr(trans, field, value)
-    
+
+    new_tipo = trans.tipo
+    new_animal_id = trans.animal_id
+
+    if old_tipo == "venta" and old_animal_id and (old_tipo != new_tipo or old_animal_id != new_animal_id):
+        old_animal = db.query(Animal).filter(
+            Animal.id == old_animal_id,
+            Animal.finca_id == current_user.finca_id,
+        ).first()
+        if old_animal and old_animal.estado == "vendido":
+            old_animal.estado = "activo"
+            old_animal.fecha_salida = None
+            old_animal.motivo_salida = None
+            db.add(old_animal)
+
+    if new_tipo == "venta" and new_animal_id:
+        animal = db.query(Animal).filter(
+            Animal.id == new_animal_id,
+            Animal.finca_id == current_user.finca_id,
+        ).first()
+        if not animal:
+            raise HTTPException(status_code=404, detail="Animal no encontrado")
+        _validar_retiro_sanitario_venta(db, animal.id, current_user.finca_id, trans.fecha)
+        animal.estado = "vendido"
+        animal.fecha_salida = trans.fecha
+        animal.motivo_salida = f"Venta - {trans.concepto}"
+        db.add(animal)
+    elif new_tipo == "compra" and new_animal_id:
+        animal = db.query(Animal).filter(
+            Animal.id == new_animal_id,
+            Animal.finca_id == current_user.finca_id,
+        ).first()
+        if animal and animal.estado != "activo":
+            animal.estado = "activo"
+            animal.fecha_salida = None
+            animal.motivo_salida = None
+            db.add(animal)
+
     db.commit()
     db.refresh(trans)
-    
+
     animal = None
     if trans.animal_id:
         animal = db.query(Animal).filter(Animal.id == trans.animal_id).first()
@@ -290,65 +412,3 @@ def eliminar_transaccion(
     db.delete(trans)
     db.commit()
     return None
-
-
-@router.get("/resumen/financiero", response_model=ResumenFinanciero)
-def obtener_resumen_financiero(
-    *,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)
-) -> Any:
-    """Obtener resumen financiero de la finca"""
-    # Total ventas
-    total_ventas = db.query(func.sum(Transaccion.monto)).filter(
-        Transaccion.finca_id == current_user.finca_id,
-        Transaccion.tipo == "venta"
-    ).scalar() or 0.0
-    
-    # Total compras
-    total_compras = db.query(func.sum(Transaccion.monto)).filter(
-        Transaccion.finca_id == current_user.finca_id,
-        Transaccion.tipo == "compra"
-    ).scalar() or 0.0
-    
-    # Total gastos
-    total_gastos = db.query(func.sum(Transaccion.monto)).filter(
-        Transaccion.finca_id == current_user.finca_id,
-        Transaccion.tipo == "gasto"
-    ).scalar() or 0.0
-    
-    # Mes actual
-    primer_dia_mes = date.today().replace(day=1)
-    ventas_mes = db.query(func.sum(Transaccion.monto)).filter(
-        Transaccion.finca_id == current_user.finca_id,
-        Transaccion.tipo == "venta",
-        Transaccion.fecha >= primer_dia_mes
-    ).scalar() or 0.0
-    
-    gastos_mes = db.query(func.sum(Transaccion.monto)).filter(
-        Transaccion.finca_id == current_user.finca_id,
-        Transaccion.tipo == "gasto",
-        Transaccion.fecha >= primer_dia_mes
-    ).scalar() or 0.0
-    
-    # Gastos por categoría
-    gastos_por_cat = db.query(
-        Transaccion.categoria_gasto,
-        func.sum(Transaccion.monto).label("total")
-    ).filter(
-        Transaccion.finca_id == current_user.finca_id,
-        Transaccion.tipo == "gasto",
-        Transaccion.categoria_gasto.isnot(None)
-    ).group_by(Transaccion.categoria_gasto).all()
-    
-    gasto_por_categoria = {cat: float(total) for cat, total in gastos_por_cat}
-    
-    return ResumenFinanciero(
-        total_ventas=float(total_ventas),
-        total_compras=float(total_compras),
-        total_gastos=float(total_gastos),
-        balance_neto=float(total_ventas - total_compras - total_gastos),
-        ventas_mes_actual=float(ventas_mes),
-        gastos_mes_actual=float(gastos_mes),
-        gasto_por_categoria=gasto_por_categoria
-    )

@@ -2,8 +2,12 @@ import { useState, useEffect } from 'react';
 import { produccionService } from '../api/produccion';
 import ProduccionModal from '../components/ProduccionModal';
 import type { RegistroProduccion } from '../types/produccion';
+import { useAuth } from '../context/AuthContext';
+import AppShell from '../components/AppShell';
 
 export default function ProduccionPage() {
+  const { user, logout } = useAuth();
+  const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
   const [registros, setRegistros] = useState<RegistroProduccion[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -100,10 +104,10 @@ export default function ProduccionPage() {
 
   const getTipoIcon = (tipo: string) => {
     switch (tipo) {
-      case 'leche': return '🥛';
-      case 'carne': return '🥩';
-      case 'lana': return '🧶';
-      default: return '📦';
+      case 'leche': return 'Leche';
+      case 'carne': return 'Carne';
+      case 'lana': return 'Lana';
+      default: return 'Otro';
     }
   };
 
@@ -125,75 +129,62 @@ export default function ProduccionPage() {
     : registros;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => window.history.back()}
-                className="text-gray-600 hover:text-gray-900"
-              >
-                ← Volver
-              </button>
-              <h1 className="text-3xl font-bold text-gray-900">
-                📊 Registros de Producción
-              </h1>
-            </div>
-            <button
-              onClick={handleNuevo}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
-            >
-              <span>+</span> Nuevo Registro
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <AppShell
+      title="Registros de Produccion"
+      subtitle="Leche, carne y rendimiento"
+      userName={user?.nombre_completo}
+      role={user?.rol}
+      onLogout={logout}
+      online={isOnline}
+      rightSlot={
+        <button onClick={handleNuevo} className="gd-btn-primary !py-2">
+          + Nuevo registro
+        </button>
+      }
+    >
+      <div className="max-w-7xl mx-auto">
         {/* Estadísticas */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white p-6 rounded-lg shadow">
-            <div className="text-sm text-gray-600">Total Leche</div>
+          <div className="gd-card p-6">
+            <div className="text-sm text-slate-600">Total Leche</div>
             <div className="text-2xl font-bold text-blue-600">{stats.totalLeche.toFixed(1)} L</div>
           </div>
-          <div className="bg-white p-6 rounded-lg shadow">
-            <div className="text-sm text-gray-600">Promedio Diario</div>
+          <div className="gd-card p-6">
+            <div className="text-sm text-slate-600">Promedio Diario</div>
             <div className="text-2xl font-bold text-green-600">{stats.promedioDiario.toFixed(1)} L</div>
           </div>
-          <div className="bg-white p-6 rounded-lg shadow">
-            <div className="text-sm text-gray-600">Registros Hoy</div>
+          <div className="gd-card p-6">
+            <div className="text-sm text-slate-600">Registros Hoy</div>
             <div className="text-2xl font-bold text-purple-600">{stats.registrosHoy}</div>
           </div>
-          <div className="bg-white p-6 rounded-lg shadow">
-            <div className="text-sm text-gray-600">Registros este Mes</div>
+          <div className="gd-card p-6">
+            <div className="text-sm text-slate-600">Registros este Mes</div>
             <div className="text-2xl font-bold text-orange-600">{stats.registrosMes}</div>
           </div>
         </div>
 
         {/* Filtros */}
-        <div className="bg-white p-4 rounded-lg shadow mb-6">
+        <div className="gd-card p-4 md:p-5 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-semibold text-slate-700 mb-1">
                 Tipo de Producción
               </label>
               <select
                 value={filtroTipo}
                 onChange={(e) => setFiltroTipo(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                className="gd-input"
               >
                 <option value="">Todos</option>
-                <option value="leche">🥛 Leche</option>
-                <option value="carne">🥩 Carne</option>
-                <option value="lana">🧶 Lana</option>
-                <option value="otro">📦 Otro</option>
+                <option value="leche">Leche</option>
+                <option value="carne">Carne</option>
+                <option value="lana">Lana</option>
+                <option value="otro">Otro</option>
               </select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-semibold text-slate-700 mb-1">
                 Buscar Animal
               </label>
               <input
@@ -201,12 +192,12 @@ export default function ProduccionPage() {
                 value={filtroAnimal}
                 onChange={(e) => setFiltroAnimal(e.target.value)}
                 placeholder="Número o nombre..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                className="gd-input"
               />
             </div>
 
             <div className="flex items-end">
-              <div className="text-sm text-gray-600">
+              <div className="text-sm text-slate-600">
                 <strong>{registrosFiltrados.length}</strong> de <strong>{total}</strong> registros
               </div>
             </div>
@@ -214,115 +205,105 @@ export default function ProduccionPage() {
         </div>
 
         {/* Tabla */}
-        <div className="bg-white shadow rounded-lg overflow-hidden">
+        <div className="gd-card overflow-hidden">
           {loading ? (
             <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-              <p className="mt-4 text-gray-600">Cargando registros...</p>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600 mx-auto"></div>
+              <p className="mt-4 text-slate-600">Cargando registros...</p>
             </div>
           ) : registrosFiltrados.length === 0 ? (
             <div className="text-center py-12">
-              <p className="text-gray-500 text-lg">No hay registros de producción</p>
+              <p className="text-slate-500 text-lg">No hay registros de producción</p>
               <button
                 onClick={handleNuevo}
-                className="mt-4 text-blue-600 hover:text-blue-700 font-medium"
+                className="mt-4 text-brand-600 hover:text-brand-700 font-semibold"
               >
                 + Crear el primer registro
               </button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Fecha
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Animal
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Tipo
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Cantidad
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Detalles
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Calidad
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Acciones
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {registrosFiltrados.map((registro) => (
-                    <tr key={registro.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {formatDate(registro.fecha)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <div className="font-medium text-gray-900">
-                          {registro.animal_numero || `ID: ${registro.animal_id}`}
-                        </div>
-                        {registro.animal_nombre && (
-                          <div className="text-gray-500">{registro.animal_nombre}</div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTipoColor(registro.tipo_produccion)}`}>
-                          {getTipoIcon(registro.tipo_produccion)} {registro.tipo_produccion}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {registro.tipo_produccion === 'leche' && registro.cantidad_litros && (
-                          <span className="font-semibold text-blue-600">{registro.cantidad_litros} L</span>
-                        )}
-                        {registro.tipo_produccion === 'carne' && registro.peso_venta && (
-                          <span className="font-semibold text-red-600">{registro.peso_venta} kg</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">
-                        {registro.turno && <div>Turno: {registro.turno}</div>}
-                        {registro.observaciones && (
-                          <div className="text-xs text-gray-500 truncate max-w-xs">
-                            {registro.observaciones}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        {registro.calidad && (
-                          <span className={`capitalize ${
-                            registro.calidad === 'alta' ? 'text-green-600 font-semibold' :
-                            registro.calidad === 'media' ? 'text-yellow-600' :
-                            'text-red-600'
-                          }`}>
-                            {registro.calidad}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button
-                          onClick={() => handleEditar(registro)}
-                          className="text-blue-600 hover:text-blue-900 mr-3"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          onClick={() => handleEliminar(registro.id)}
-                          className="text-red-600 hover:text-red-900"
-                        >
-                          Eliminar
-                        </button>
-                      </td>
+            <>
+              <div className="space-y-3 p-3 md:hidden">
+                {registrosFiltrados.map((registro) => (
+                  <article key={registro.id} className="rounded-xl border border-slate-200 bg-white p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-bold text-slate-900">{registro.animal_numero || `ID: ${registro.animal_id}`}</p>
+                        <p className="text-xs text-slate-500">{formatDate(registro.fecha)}</p>
+                      </div>
+                      <span className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold ${getTipoColor(registro.tipo_produccion)}`}>
+                        {getTipoIcon(registro.tipo_produccion)}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-700">
+                      {registro.tipo_produccion === 'leche' && registro.cantidad_litros ? `${registro.cantidad_litros} L` : ''}
+                      {registro.tipo_produccion === 'carne' && registro.peso_venta ? `${registro.peso_venta} kg` : ''}
+                    </p>
+                    {registro.turno ? <p className="text-xs text-slate-500">Turno: {registro.turno}</p> : null}
+                    {registro.calidad ? <p className="text-xs text-slate-500">Calidad: {registro.calidad}</p> : null}
+                    <div className="mt-3 flex gap-2">
+                      <button onClick={() => handleEditar(registro)} className="gd-btn-secondary !px-3 !py-2 text-xs">Editar</button>
+                      <button onClick={() => handleEliminar(registro.id)} className="rounded-xl border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50">Eliminar</button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              <div className="hidden overflow-x-auto md:block">
+                <table className="min-w-full divide-y divide-slate-200">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Fecha</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Animal</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Tipo</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Cantidad</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Detalles</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Calidad</th>
+                      <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Acciones</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-slate-200">
+                    {registrosFiltrados.map((registro) => (
+                      <tr key={registro.id} className="hover:bg-brand-50/30">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{formatDate(registro.fecha)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <div className="font-medium text-slate-900">{registro.animal_numero || `ID: ${registro.animal_id}`}</div>
+                          {registro.animal_nombre && <div className="text-slate-500">{registro.animal_nombre}</div>}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTipoColor(registro.tipo_produccion)}`}>
+                            {getTipoIcon(registro.tipo_produccion)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {registro.tipo_produccion === 'leche' && registro.cantidad_litros && <span className="font-semibold text-blue-600">{registro.cantidad_litros} L</span>}
+                          {registro.tipo_produccion === 'carne' && registro.peso_venta && <span className="font-semibold text-red-600">{registro.peso_venta} kg</span>}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-600">
+                          {registro.turno && <div>Turno: {registro.turno}</div>}
+                          {registro.observaciones && <div className="text-xs text-slate-500 truncate max-w-xs">{registro.observaciones}</div>}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          {registro.calidad && (
+                            <span className={`capitalize ${
+                              registro.calidad === 'alta' ? 'text-green-600 font-semibold' :
+                              registro.calidad === 'media' ? 'text-yellow-600' :
+                              'text-red-600'
+                            }`}>
+                              {registro.calidad}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <button onClick={() => handleEditar(registro)} className="text-sky-600 hover:text-sky-800 mr-3">Editar</button>
+                          <button onClick={() => handleEliminar(registro.id)} className="text-red-600 hover:text-red-900">Eliminar</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -334,6 +315,6 @@ export default function ProduccionPage() {
         onSave={handleModalSave}
         registro={selectedRegistro}
       />
-    </div>
+    </AppShell>
   );
 }

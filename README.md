@@ -31,10 +31,10 @@ DEBUG=False
 ENVIRONMENT=production
 ```
 
-## 📝 Credenciales de Prueba
+## 📝 Acceso
 
-- **Email:** admin@mifinca.com
-- **Contraseña:** password123
+- Crea usuarios mediante el endpoint `POST /api/v1/auth/register`.
+- Para demos locales, habilita seed controlado con `ENABLE_BOOTSTRAP_SEED=true`.
 
 ## 🌟 Funcionalidades
 

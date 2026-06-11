@@ -37,7 +37,7 @@ psql -U postgres
 CREATE DATABASE ganadero_digital;
 
 # Crear usuario (opcional)
-CREATE USER ganadero WITH PASSWORD 'password123';
+CREATE USER ganadero WITH PASSWORD 'cambia-esta-clave-segura';
 GRANT ALL PRIVILEGES ON DATABASE ganadero_digital TO ganadero;
 
 # Salir
@@ -111,8 +111,8 @@ O usa PowerShell:
 
 ```powershell
 $body = @{
-    email = "admin@mifinca.com"
-    password = "password123"
+    email = "admin@example.com"
+    password = "ChangeMe123!"
     nombre_completo = "Juan Pérez"
     finca_nombre = "Finca El Paraíso"
     departamento = "Antioquia"
@@ -135,7 +135,7 @@ Recibirás:
 ### 2. Login
 
 ```powershell
-$loginBody = "username=admin@mifinca.com&password=password123"
+$loginBody = "username=admin@example.com&password=ChangeMe123!"
 
 Invoke-RestMethod -Uri http://localhost:8000/api/v1/auth/login -Method Post -Body $loginBody -ContentType "application/x-www-form-urlencoded"
 ```

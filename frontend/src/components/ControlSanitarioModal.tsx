@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { sanitariosService } from '../api/sanitarios';
 import { animalesService } from '../api/animales';
 import type { ControlSanitario, ControlSanitarioCreate } from '../types/sanitario';
 import type { Animal } from '../types/animal';
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
+import { ShieldPlus, SquarePen } from 'lucide-react';
 
 interface ControlSanitarioModalProps {
   isOpen: boolean;
@@ -12,6 +14,9 @@ interface ControlSanitarioModalProps {
 }
 
 export default function ControlSanitarioModal({ isOpen, onClose, onSave, control }: ControlSanitarioModalProps) {
+  const modalTitleId = 'control-sanitario-modal-title';
+  const modalRef = useRef<HTMLDivElement>(null);
+  const initialFocusRef = useRef<HTMLSelectElement>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [animales, setAnimales] = useState<Animal[]>([]);
@@ -41,6 +46,8 @@ export default function ControlSanitarioModal({ isOpen, onClose, onSave, control
       loadAnimales();
     }
   }, [isOpen]);
+
+  useModalFocusTrap(isOpen, onClose, modalRef, initialFocusRef);
 
   useEffect(() => {
     if (control) {
@@ -88,7 +95,7 @@ export default function ControlSanitarioModal({ isOpen, onClose, onSave, control
 
   const loadAnimales = async () => {
     try {
-      const response = await animalesService.getAnimales({ estado: 'activo', limit: 1000 });
+      const response = await animalesService.getAnimalesAll({ estado: 'activo' });
       setAnimales(response.items);
     } catch (err) {
       console.error('Error cargando animales:', err);
@@ -139,23 +146,40 @@ export default function ControlSanitarioModal({ isOpen, onClose, onSave, control
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
+    <div
+      className="gd-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 p-4 backdrop-blur-sm"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        ref={modalRef}
+        className="gd-modal-panel gd-modal-surface max-w-4xl max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={modalTitleId}
+      >
+        <div className="gd-modal-body p-6">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-2xl font-bold text-gray-900">
+            <h2 id={modalTitleId} className="flex items-center gap-2 text-2xl font-extrabold text-slate-900">
+              {control ? (
+                <SquarePen className="h-6 w-6 text-brand-700" />
+              ) : (
+                <ShieldPlus className="h-6 w-6 text-brand-700" />
+              )}
               {control ? 'Editar Registro Sanitario' : 'Nuevo Registro Sanitario'}
             </h2>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600"
+              className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              aria-label="Cerrar modal"
             >
               ✕
             </button>
           </div>
 
           {error && (
-            <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+            <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-700">
               {error}
             </div>
           )}
@@ -164,14 +188,15 @@ export default function ControlSanitarioModal({ isOpen, onClose, onSave, control
             {/* Animal y Tipo */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="mb-1 block text-sm font-semibold text-slate-700">
                   Animal *
                 </label>
                 <select
+                  ref={initialFocusRef}
                   required
                   value={formData.animal_id}
                   onChange={(e) => setFormData({ ...formData, animal_id: e.target.value })}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500"
+                  className="gd-input"
                 >
                   <option value="">Seleccionar animal</option>
                   {animales.map((animal) => (
@@ -183,20 +208,20 @@ export default function ControlSanitarioModal({ isOpen, onClose, onSave, control
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="mb-1 block text-sm font-semibold text-slate-700">
                   Tipo de Evento *
                 </label>
                 <select
                   required
                   value={formData.tipo}
                   onChange={(e) => setFormData({ ...formData, tipo: e.target.value })}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500"
+                  className="gd-input"
                 >
-                  <option value="vacuna">💉 Vacuna</option>
-                  <option value="desparasitacion">🪱 Desparasitación</option>
-                  <option value="tratamiento">💊 Tratamiento</option>
-                  <option value="cirugia">🏥 Cirugía</option>
-                  <option value="otro">📋 Otro</option>
+                  <option value="vacuna">Vacuna</option>
+                  <option value="desparasitacion">Desparasitación</option>
+                  <option value="tratamiento">Tratamiento</option>
+                  <option value="cirugia">Cirugía</option>
+                  <option value="otro">Otro</option>
                 </select>
               </div>
             </div>
@@ -204,7 +229,7 @@ export default function ControlSanitarioModal({ isOpen, onClose, onSave, control
             {/* Fecha y Producto */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="mb-1 block text-sm font-semibold text-slate-700">
                   Fecha de Aplicación *
                 </label>
                 <input
@@ -212,19 +237,19 @@ export default function ControlSanitarioModal({ isOpen, onClose, onSave, control
                   required
                   value={formData.fecha}
                   onChange={(e) => setFormData({ ...formData, fecha: e.target.value })}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500"
+                  className="gd-input"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="mb-1 block text-sm font-semibold text-slate-700">
                   Producto/Medicamento
                 </label>
                 <input
                   type="text"
                   value={formData.producto}
                   onChange={(e) => setFormData({ ...formData, producto: e.target.value })}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500"
+                  className="gd-input"
                   placeholder="Ej: Ivermectina, Brucelina"
                 />
               </div>
@@ -431,14 +456,14 @@ export default function ControlSanitarioModal({ isOpen, onClose, onSave, control
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                className="gd-btn-secondary"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
                 disabled={loading}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+                className="gd-btn-primary disabled:opacity-60"
               >
                 {loading ? 'Guardando...' : 'Guardar'}
               </button>

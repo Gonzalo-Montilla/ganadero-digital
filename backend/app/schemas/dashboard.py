@@ -18,6 +18,7 @@ class InventarioResumen(BaseModel):
     animales_activos: int
     animales_vendidos: int
     animales_muertos: int
+    carga_animal_hectarea: float = 0.0
 
 
 class ControlSanitarioAlerta(BaseModel):
@@ -41,6 +42,7 @@ class ProduccionResumen(BaseModel):
     produccion_leche_hoy: float = 0.0
     produccion_leche_mes: float = 0.0
     promedio_litros_vaca: float = 0.0
+    costo_por_litro: float = 0.0
 
 
 class FinanzasResumen(BaseModel):
@@ -49,6 +51,7 @@ class FinanzasResumen(BaseModel):
     gastos_mes: float
     balance_mes: float
     total_balance: float
+    costo_por_kg_estimado: float = 0.0
 
 
 class DashboardCompleto(BaseModel):
@@ -58,6 +61,8 @@ class DashboardCompleto(BaseModel):
     reproduccion: ControlReproductivoResumen
     produccion: ProduccionResumen
     finanzas: FinanzasResumen
+    analisis_descarte: list[str] = []
+    proyeccion_inventario: dict[str, int] = {}
     ultima_actualizacion: date
 
 

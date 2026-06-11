@@ -2,6 +2,9 @@ import { useRef } from 'react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import type { Animal } from '../types/animal';
+import { getMediaUrl } from '../utils/mediaUrl';
+import AuthenticatedImage from './AuthenticatedImage';
+import { Beef, ClipboardList, Download, MapPin, Scale, ScrollText, Users } from 'lucide-react';
 
 interface AnimalDetailsModalProps {
   isOpen: boolean;
@@ -62,7 +65,10 @@ export default function AnimalDetailsModal({ isOpen, onClose, animal }: AnimalDe
           <div className="flex justify-between items-start mb-6">
             <div>
               <h2 className="text-2xl font-bold text-gray-900">
-                🐄 {animal.nombre || animal.numero_identificacion}
+                <span className="inline-flex items-center gap-2">
+                  <Beef className="h-6 w-6 text-brand-700" />
+                  {animal.nombre || animal.numero_identificacion}
+                </span>
               </h2>
               <p className="text-sm text-gray-500 mt-1">
                 #{animal.numero_identificacion}
@@ -77,15 +83,15 @@ export default function AnimalDetailsModal({ isOpen, onClose, animal }: AnimalDe
           </div>
 
           {/* Foto si existe */}
-          {animal.foto_url && (
+          {animal.foto_url ? (
             <div className="mb-6">
-              <img
-                src={`http://localhost:8000${animal.foto_url}`}
+              <AuthenticatedImage
+                src={getMediaUrl(animal.foto_url)}
                 alt={animal.nombre || animal.numero_identificacion}
-                className="w-full h-48 object-cover rounded-lg"
+                className="h-48 w-full rounded-lg object-cover"
               />
             </div>
-          )}
+          ) : null}
 
           {/* Estado Badge */}
           <div className="mb-6">
@@ -106,11 +112,14 @@ export default function AnimalDetailsModal({ isOpen, onClose, animal }: AnimalDe
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                📋 Información Básica
+                <span className="inline-flex items-center gap-2">
+                  <ClipboardList className="h-5 w-5 text-brand-700" />
+                  Información Básica
+                </span>
               </h3>
               <dl className="divide-y divide-gray-200">
                 <InfoRow label="Nombre" value={animal.nombre} />
-                <InfoRow label="Sexo" value={animal.sexo === 'macho' ? '♂ Macho' : '♀ Hembra'} />
+                <InfoRow label="Sexo" value={animal.sexo === 'macho' ? 'Macho' : 'Hembra'} />
                 <InfoRow label="Raza" value={animal.raza} />
                 <InfoRow label="Color" value={animal.color} />
                 <InfoRow label="Fecha de Nacimiento" value={formatDate(animal.fecha_nacimiento)} />
@@ -121,7 +130,10 @@ export default function AnimalDetailsModal({ isOpen, onClose, animal }: AnimalDe
 
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                📍 Ubicación y Gestión
+                <span className="inline-flex items-center gap-2">
+                  <MapPin className="h-5 w-5 text-brand-700" />
+                  Ubicación y Gestión
+                </span>
               </h3>
               <dl className="divide-y divide-gray-200">
                 <InfoRow label="Lote Actual" value={animal.lote_actual} />
@@ -135,7 +147,10 @@ export default function AnimalDetailsModal({ isOpen, onClose, animal }: AnimalDe
           {/* Pesos */}
           <div className="mt-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              ⚖️ Información de Peso
+              <span className="inline-flex items-center gap-2">
+                <Scale className="h-5 w-5 text-brand-700" />
+                Información de Peso
+              </span>
             </h3>
             <dl className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-gray-50 p-4 rounded-lg">
@@ -184,7 +199,10 @@ export default function AnimalDetailsModal({ isOpen, onClose, animal }: AnimalDe
           {(animal.madre_id || animal.padre_id) && (
             <div className="mt-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                👨‍👩‍👧 Genealogía
+                <span className="inline-flex items-center gap-2">
+                  <Users className="h-5 w-5 text-brand-700" />
+                  Genealogía
+                </span>
               </h3>
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-pink-50 p-4 rounded-lg">
@@ -207,7 +225,10 @@ export default function AnimalDetailsModal({ isOpen, onClose, animal }: AnimalDe
           {animal.observaciones && (
             <div className="mt-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                📝 Observaciones
+                <span className="inline-flex items-center gap-2">
+                  <ScrollText className="h-5 w-5 text-brand-700" />
+                  Observaciones
+                </span>
               </h3>
               <p className="text-sm text-gray-700 bg-gray-50 p-4 rounded-lg">
                 {animal.observaciones}
@@ -228,7 +249,8 @@ export default function AnimalDetailsModal({ isOpen, onClose, animal }: AnimalDe
               onClick={handleDownloadPDF}
               className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
             >
-              💾 Descargar PDF
+              <Download className="h-4 w-4" />
+              Descargar PDF
             </button>
             <button
               onClick={onClose}

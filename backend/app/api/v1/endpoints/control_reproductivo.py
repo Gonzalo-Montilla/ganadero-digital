@@ -19,6 +19,8 @@ from app.schemas.control_reproductivo import (
     ControlReproductivoListResponse,
     EstadisticasReproductivas
 )
+from app.services.rules_engine import calcular_fecha_probable_parto
+from app.services.alertas_service import contar_partos_activos_en_rango
 
 router = APIRouter()
 
@@ -73,8 +75,15 @@ def crear_registro_reproductivo(
             )
     
     # Crear registro
+    registro_data = registro_in.model_dump()
+    if (
+        registro_data.get("tipo_evento") == "servicio"
+        and not registro_data.get("fecha_probable_parto")
+    ):
+        registro_data["fecha_probable_parto"] = calcular_fecha_probable_parto(registro_in.fecha_evento)
+
     db_registro = ControlReproductivo(
-        **registro_in.model_dump(),
+        **registro_data,
         finca_id=current_user.finca_id,
         registrado_por=current_user.id
     )
@@ -161,6 +170,90 @@ def listar_registros_reproductivos(
     )
 
 
+@router.get("/estadisticas/resumen", response_model=EstadisticasReproductivas)
+def obtener_estadisticas_reproductivas(
+    *,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+) -> Any:
+    """
+    Obtener estadísticas reproductivas de la finca
+    """
+    total_hembras = db.query(Animal).filter(
+        Animal.finca_id == current_user.finca_id,
+        Animal.sexo == "hembra",
+        Animal.estado == "activo"
+    ).count()
+
+    ultimo_diagnostico_subquery = (
+        db.query(
+            ControlReproductivo.animal_id,
+            func.max(ControlReproductivo.fecha_evento).label("ultima_fecha")
+        )
+        .filter(
+            ControlReproductivo.finca_id == current_user.finca_id,
+            ControlReproductivo.tipo_evento == "diagnostico"
+        )
+        .group_by(ControlReproductivo.animal_id)
+        .subquery()
+    )
+
+    hembras_prenadas = db.query(ControlReproductivo).join(
+        ultimo_diagnostico_subquery,
+        and_(
+            ControlReproductivo.animal_id == ultimo_diagnostico_subquery.c.animal_id,
+            ControlReproductivo.fecha_evento == ultimo_diagnostico_subquery.c.ultima_fecha
+        )
+    ).filter(
+        ControlReproductivo.diagnostico == "prenada"
+    ).count()
+
+    hembras_vacias = db.query(ControlReproductivo).join(
+        ultimo_diagnostico_subquery,
+        and_(
+            ControlReproductivo.animal_id == ultimo_diagnostico_subquery.c.animal_id,
+            ControlReproductivo.fecha_evento == ultimo_diagnostico_subquery.c.ultima_fecha
+        )
+    ).filter(
+        ControlReproductivo.diagnostico == "vacia"
+    ).count()
+
+    hace_30_dias = date.today() - timedelta(days=30)
+    servicios_ultimo_mes = db.query(ControlReproductivo).filter(
+        ControlReproductivo.finca_id == current_user.finca_id,
+        ControlReproductivo.tipo_evento == "servicio",
+        ControlReproductivo.fecha_evento >= hace_30_dias
+    ).count()
+
+    partos_ultimo_mes = db.query(ControlReproductivo).filter(
+        ControlReproductivo.finca_id == current_user.finca_id,
+        ControlReproductivo.tipo_evento == "parto",
+        ControlReproductivo.fecha_evento >= hace_30_dias
+    ).count()
+
+    tasa_prenez = (hembras_prenadas / total_hembras * 100) if total_hembras > 0 else 0.0
+
+    promedio_dias_gestacion = db.query(func.avg(ControlReproductivo.dias_gestacion)).filter(
+        ControlReproductivo.finca_id == current_user.finca_id,
+        ControlReproductivo.diagnostico == "prenada",
+        ControlReproductivo.dias_gestacion.isnot(None)
+    ).scalar() or 0.0
+
+    hoy = date.today()
+    proximos_partos = contar_partos_activos_en_rango(db, current_user.finca_id, hoy, 30)
+
+    return EstadisticasReproductivas(
+        total_hembras=total_hembras,
+        hembras_prenadas=hembras_prenadas,
+        hembras_vacias=hembras_vacias,
+        servicios_ultimo_mes=servicios_ultimo_mes,
+        partos_ultimo_mes=partos_ultimo_mes,
+        tasa_prenez=round(tasa_prenez, 2),
+        promedio_dias_gestacion=round(promedio_dias_gestacion, 1) if promedio_dias_gestacion else None,
+        proximos_partos_30_dias=proximos_partos
+    )
+
+
 @router.get("/{registro_id}", response_model=ControlReproductivoResponse)
 def obtener_registro_reproductivo(
     *,
@@ -219,6 +312,8 @@ def actualizar_registro_reproductivo(
         )
     
     update_data = registro_in.model_dump(exclude_unset=True)
+    if update_data.get("tipo_evento") == "servicio" and update_data.get("fecha_evento") and not update_data.get("fecha_probable_parto"):
+        update_data["fecha_probable_parto"] = calcular_fecha_probable_parto(update_data["fecha_evento"])
     for field, value in update_data.items():
         setattr(registro, field, value)
     
@@ -262,103 +357,5 @@ def eliminar_registro_reproductivo(
     
     db.delete(registro)
     db.commit()
-    
+
     return None
-
-
-@router.get("/estadisticas/resumen", response_model=EstadisticasReproductivas)
-def obtener_estadisticas_reproductivas(
-    *,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)
-) -> Any:
-    """
-    Obtener estadísticas reproductivas de la finca
-    """
-    # Total de hembras activas
-    total_hembras = db.query(Animal).filter(
-        Animal.finca_id == current_user.finca_id,
-        Animal.sexo == "hembra",
-        Animal.estado == "activo"
-    ).count()
-    
-    # Obtener último diagnóstico de cada hembra
-    ultimo_diagnostico_subquery = (
-        db.query(
-            ControlReproductivo.animal_id,
-            func.max(ControlReproductivo.fecha_evento).label("ultima_fecha")
-        )
-        .filter(
-            ControlReproductivo.finca_id == current_user.finca_id,
-            ControlReproductivo.tipo_evento == "diagnostico"
-        )
-        .group_by(ControlReproductivo.animal_id)
-        .subquery()
-    )
-    
-    # Hembras preñadas (último diagnóstico = prenada)
-    hembras_prenadas = db.query(ControlReproductivo).join(
-        ultimo_diagnostico_subquery,
-        and_(
-            ControlReproductivo.animal_id == ultimo_diagnostico_subquery.c.animal_id,
-            ControlReproductivo.fecha_evento == ultimo_diagnostico_subquery.c.ultima_fecha
-        )
-    ).filter(
-        ControlReproductivo.diagnostico == "prenada"
-    ).count()
-    
-    # Hembras vacías
-    hembras_vacias = db.query(ControlReproductivo).join(
-        ultimo_diagnostico_subquery,
-        and_(
-            ControlReproductivo.animal_id == ultimo_diagnostico_subquery.c.animal_id,
-            ControlReproductivo.fecha_evento == ultimo_diagnostico_subquery.c.ultima_fecha
-        )
-    ).filter(
-        ControlReproductivo.diagnostico == "vacia"
-    ).count()
-    
-    # Servicios último mes
-    hace_30_dias = date.today() - timedelta(days=30)
-    servicios_ultimo_mes = db.query(ControlReproductivo).filter(
-        ControlReproductivo.finca_id == current_user.finca_id,
-        ControlReproductivo.tipo_evento == "servicio",
-        ControlReproductivo.fecha_evento >= hace_30_dias
-    ).count()
-    
-    # Partos último mes
-    partos_ultimo_mes = db.query(ControlReproductivo).filter(
-        ControlReproductivo.finca_id == current_user.finca_id,
-        ControlReproductivo.tipo_evento == "parto",
-        ControlReproductivo.fecha_evento >= hace_30_dias
-    ).count()
-    
-    # Tasa de preñez
-    tasa_prenez = (hembras_prenadas / total_hembras * 100) if total_hembras > 0 else 0.0
-    
-    # Promedio días gestación
-    promedio_dias_gestacion = db.query(func.avg(ControlReproductivo.dias_gestacion)).filter(
-        ControlReproductivo.finca_id == current_user.finca_id,
-        ControlReproductivo.diagnostico == "prenada",
-        ControlReproductivo.dias_gestacion.isnot(None)
-    ).scalar() or 0.0
-    
-    # Próximos partos en 30 días
-    dentro_30_dias = date.today() + timedelta(days=30)
-    proximos_partos = db.query(ControlReproductivo).filter(
-        ControlReproductivo.finca_id == current_user.finca_id,
-        ControlReproductivo.fecha_probable_parto.isnot(None),
-        ControlReproductivo.fecha_probable_parto <= dentro_30_dias,
-        ControlReproductivo.fecha_probable_parto >= date.today()
-    ).count()
-    
-    return EstadisticasReproductivas(
-        total_hembras=total_hembras,
-        hembras_prenadas=hembras_prenadas,
-        hembras_vacias=hembras_vacias,
-        servicios_ultimo_mes=servicios_ultimo_mes,
-        partos_ultimo_mes=partos_ultimo_mes,
-        tasa_prenez=round(tasa_prenez, 2),
-        promedio_dias_gestacion=round(promedio_dias_gestacion, 1) if promedio_dias_gestacion else None,
-        proximos_partos_30_dias=proximos_partos
-    )

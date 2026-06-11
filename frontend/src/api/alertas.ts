@@ -1,8 +1,8 @@
-import api from './config';
+import apiClient from './client';
 
 export interface Alerta {
   id: string;
-  tipo: 'parto' | 'vacuna' | 'sanitario' | 'reproductivo' | 'otro';
+  tipo: 'parto' | 'vacuna' | 'sanitario' | 'reproductivo' | 'retiro_sanitario' | 'dias_abiertos' | 'otro';
   prioridad: 'alta' | 'media' | 'baja';
   titulo: string;
   descripcion: string;
@@ -12,61 +12,32 @@ export interface Alerta {
   animal_nombre?: string;
 }
 
+interface DashboardAlertaResponse {
+  tipo: string;
+  prioridad: 'alta' | 'media' | 'baja';
+  animal_id: number;
+  animal_numero?: string;
+  animal_nombre?: string;
+  mensaje: string;
+  fecha_limite?: string;
+}
+
 export const alertasService = {
   async getAlertas(): Promise<Alerta[]> {
     try {
-      const [reproductivos, sanitarios] = await Promise.all([
-        api.get('/control-reproductivo/'),
-        api.get('/control-sanitario/'),
-      ]);
-
-      const alertas: Alerta[] = [];
-      const hoy = new Date();
-      const treintaDias = new Date(hoy.getTime() + 30 * 24 * 60 * 60 * 1000);
-
-      // Alertas de próximos partos (30 días)
-      reproductivos.data.items?.forEach((r: any) => {
-        if (r.fecha_probable_parto && r.diagnostico === 'prenada') {
-          const fechaParto = new Date(r.fecha_probable_parto);
-          if (fechaParto >= hoy && fechaParto <= treintaDias) {
-            const diasRestantes = Math.ceil((fechaParto.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
-            alertas.push({
-              id: `parto-${r.id}`,
-              tipo: 'parto',
-              prioridad: diasRestantes <= 7 ? 'alta' : 'media',
-              titulo: 'Próximo Parto',
-              descripcion: `${r.animal_numero || 'Animal'} - Parto estimado en ${diasRestantes} días`,
-              fecha: r.fecha_probable_parto,
-              animal_id: r.animal_id,
-              animal_numero: r.animal_numero,
-              animal_nombre: r.animal_nombre,
-            });
-          }
-        }
-      });
-
-      // Alertas de vacunas/tratamientos recientes (últimos 30 días)
-      sanitarios.data.items?.forEach((s: any) => {
-        const fechaEvento = new Date(s.fecha_evento);
-        const diasDesde = Math.ceil((hoy.getTime() - fechaEvento.getTime()) / (1000 * 60 * 60 * 24));
-        
-        if (diasDesde <= 30 && diasDesde >= 0) {
-          alertas.push({
-            id: `sanitario-${s.id}`,
-            tipo: 'sanitario',
-            prioridad: 'baja',
-            titulo: `Control: ${s.tipo_evento}`,
-            descripcion: `${s.animal_numero || 'Animal'} - ${s.producto || s.tipo_evento} hace ${diasDesde} días`,
-            fecha: s.fecha_evento,
-            animal_id: s.animal_id,
-            animal_numero: s.animal_numero,
-            animal_nombre: s.animal_nombre,
-          });
-        }
-      });
-
-      // Ordenar por fecha
-      return alertas.sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
+      const response = await apiClient.get('/dashboard/alertas');
+      const items = (response.data?.alertas ?? []) as DashboardAlertaResponse[];
+      return items.map((item) => ({
+        id: `${item.tipo}-${item.animal_id}-${item.fecha_limite ?? 'na'}`,
+        tipo: (item.tipo as Alerta['tipo']) || 'otro',
+        prioridad: item.prioridad,
+        titulo: item.tipo?.replace('_', ' ')?.toUpperCase?.() ?? 'ALERTA',
+        descripcion: item.mensaje,
+        fecha: item.fecha_limite ?? new Date().toISOString(),
+        animal_id: item.animal_id,
+        animal_numero: item.animal_numero,
+        animal_nombre: item.animal_nombre,
+      }));
     } catch (error) {
       console.error('Error obteniendo alertas:', error);
       return [];

@@ -1,8 +1,103 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: radial-gradient(circle at top, #f3faf4 0%, #eef2f6 40%, #ecf0f5 100%);
+  color: #0f172a;
+  -webkit-tap-highlight-color: transparent;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+#root {
+  min-height: 100dvh;
+}
+
+@layer components {
+  .gd-card {
+    @apply rounded-2xl bg-white shadow-soft border border-slate-100;
+  }
+
+  .gd-section-title {
+    @apply text-lg md:text-xl font-bold text-slate-900;
+  }
+
+  .gd-btn-primary {
+    @apply inline-flex items-center justify-center rounded-xl px-4 py-3 text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 active:scale-[0.99] transition;
+  }
+
+  .gd-btn-secondary {
+    @apply inline-flex items-center justify-center rounded-xl px-4 py-3 text-sm font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 transition;
+  }
+
+  .gd-input {
+    @apply w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100;
+  }
+
+  .gd-pill {
+    @apply inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold;
+  }
+
+  .gd-nav-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+  }
+
+  .gd-nav-scroll::-webkit-scrollbar {
+    height: 4px;
+  }
+
+  .gd-nav-scroll::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-slate-300;
+  }
+
+  .gd-modal-surface {
+    @apply w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft;
+  }
+
+  .gd-modal-backdrop {
+    animation: gd-fade-in 180ms ease-out;
+  }
+
+  .gd-modal-panel {
+    animation: gd-zoom-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+    transform-origin: center;
+  }
+
+  .gd-modal-body input,
+  .gd-modal-body select,
+  .gd-modal-body textarea {
+    @apply gd-input;
+  }
+
+  .gd-modal-body label {
+    @apply mb-1 block text-sm font-semibold text-slate-700;
+  }
+}
+
+@keyframes gd-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes gd-zoom-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }

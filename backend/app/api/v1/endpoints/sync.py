@@ -1,8 +1,9 @@
 """
 Endpoints para sincronización offline
 """
-from datetime import datetime
-from typing import List, Dict, Any
+import logging
+from datetime import datetime, date
+from typing import List, Dict, Any, Type
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -10,6 +11,10 @@ from app.core.deps import get_db, get_current_user
 from app.models.usuario import Usuario
 from app.models.animal import Animal
 from app.models.finca import Finca
+from app.models.control_sanitario import ControlSanitario
+from app.models.control_reproductivo import ControlReproductivo
+from app.models.registro_produccion import RegistroProduccion
+from app.models.transaccion import Transaccion
 from app.schemas.sync import (
     SyncRequest,
     SyncResponse,
@@ -19,6 +24,61 @@ from app.schemas.sync import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+IMMUTABLE_SYNC_FIELDS = frozenset({"id", "finca_id", "created_at", "registrado_por"})
+
+PULL_ENTITY_TYPES: dict[str, Type] = {
+    "animal": Animal,
+    "control_sanitario": ControlSanitario,
+    "control_reproductivo": ControlReproductivo,
+    "produccion": RegistroProduccion,
+    "transaccion": Transaccion,
+}
+
+
+def _sanitize_sync_data(data: dict | None) -> dict:
+    if not data:
+        return {}
+    return {k: v for k, v in data.items() if k not in IMMUTABLE_SYNC_FIELDS}
+
+
+def _serialize_entity(entity: Any) -> dict[str, Any]:
+    data: dict[str, Any] = {}
+    for column in entity.__table__.columns:
+        value = getattr(entity, column.name)
+        if isinstance(value, datetime):
+            data[column.name] = value.isoformat()
+        elif isinstance(value, date):
+            data[column.name] = value.isoformat()
+        else:
+            data[column.name] = value
+    return data
+
+
+def _pull_updates_since_sync(
+    db: Session,
+    finca_id: int,
+    device_id: str,
+    last_sync: datetime,
+) -> list[dict[str, Any]]:
+    updates: list[dict[str, Any]] = []
+    for entity_type, model_class in PULL_ENTITY_TYPES.items():
+        query = db.query(model_class).filter(
+            model_class.finca_id == finca_id,
+            model_class.updated_at > last_sync,
+        )
+        if hasattr(model_class, "last_modified_device"):
+            query = query.filter(model_class.last_modified_device != device_id)
+
+        for entity in query.all():
+            updates.append({
+                "entity_type": entity_type,
+                "entity_id": entity.id,
+                "operation": "update",
+                "data": _serialize_entity(entity),
+            })
+    return updates
 
 
 def get_model_class(entity_type: str):
@@ -26,7 +86,10 @@ def get_model_class(entity_type: str):
     models = {
         "animal": Animal,
         "finca": Finca,
-        # Agregar más modelos según sea necesario
+        "control_sanitario": ControlSanitario,
+        "control_reproductivo": ControlReproductivo,
+        "produccion": RegistroProduccion,
+        "transaccion": Transaccion,
     }
     return models.get(entity_type)
 
@@ -57,9 +120,8 @@ def resolve_conflict(
     if strategy == "server_wins":
         return server_entity, conflict
     elif strategy == "client_wins":
-        # Aplicar cambios del cliente
         if client_operation.data:
-            for key, value in client_operation.data.items():
+            for key, value in _sanitize_sync_data(client_operation.data).items():
                 if hasattr(server_entity, key):
                     setattr(server_entity, key, value)
         server_entity.sync_version += 1
@@ -72,7 +134,7 @@ def resolve_conflict(
         if client_time > server_time:
             conflict.conflict_resolution = "client_wins"
             if client_operation.data:
-                for key, value in client_operation.data.items():
+                for key, value in _sanitize_sync_data(client_operation.data).items():
                     if hasattr(server_entity, key):
                         setattr(server_entity, key, value)
             server_entity.sync_version += 1
@@ -101,25 +163,28 @@ def sync_data(
     """
     conflicts: List[SyncConflict] = []
     updates_from_server: List[Dict[str, Any]] = []
-    
-    # Procesar operaciones del cliente
+    errors: List[str] = []
+
     for operation in sync_request.operations:
         try:
             model_class = get_model_class(operation.entity_type)
             if not model_class:
+                errors.append(f"Tipo de entidad desconocido: {operation.entity_type}")
                 continue
             
-            # Buscar entidad en servidor
-            server_entity = db.query(model_class).filter(
-                model_class.id == operation.entity_id,
-                model_class.finca_id == current_user.finca_id
-            ).first()
+            # Buscar entidad en servidor (si el id es local temporal en el cliente, se asume create)
+            server_entity = None
+            if operation.entity_id > 0:
+                server_entity = db.query(model_class).filter(
+                    model_class.id == operation.entity_id,
+                    model_class.finca_id == current_user.finca_id
+                ).first()
             
             if operation.operation == "create":
-                # Crear nueva entidad
                 if not server_entity and operation.data:
+                    create_data = _sanitize_sync_data(operation.data)
                     new_entity = model_class(
-                        **operation.data,
+                        **create_data,
                         finca_id=current_user.finca_id,
                         last_modified_device=sync_request.device_id
                     )
@@ -137,9 +202,8 @@ def sync_data(
                         )
                         conflicts.append(conflict)
                     else:
-                        # No hay conflicto - aplicar cambios
                         if operation.data:
-                            for key, value in operation.data.items():
+                            for key, value in _sanitize_sync_data(operation.data).items():
                                 if hasattr(server_entity, key):
                                     setattr(server_entity, key, value)
                         server_entity.sync_version += 1
@@ -153,45 +217,40 @@ def sync_data(
                         server_entity.sync_version += 1
                         server_entity.last_modified_device = sync_request.device_id
         
-        except Exception as e:
-            # Log error pero continuar con otras operaciones
-            continue
-    
-    # Commit cambios
-    db.commit()
-    
-    # Obtener actualizaciones del servidor para el cliente
-    # (entidades modificadas desde último sync del cliente)
+        except Exception as exc:
+            logger.exception(
+                "Error sync op %s %s:%s",
+                operation.operation,
+                operation.entity_type,
+                operation.entity_id,
+            )
+            errors.append(
+                f"{operation.entity_type}#{operation.entity_id} ({operation.operation}): {exc}"
+            )
+
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Error al confirmar sincronización")
+        errors.append(f"Commit fallido: {exc}")
+
     if sync_request.last_sync:
-        # Animales actualizados
-        updated_animals = db.query(Animal).filter(
-            Animal.finca_id == current_user.finca_id,
-            Animal.updated_at > sync_request.last_sync,
-            Animal.last_modified_device != sync_request.device_id  # No enviar los propios cambios
-        ).all()
-        
-        for animal in updated_animals:
-            updates_from_server.append({
-                "entity_type": "animal",
-                "entity_id": animal.id,
-                "operation": "update",
-                "data": {
-                    "id": animal.id,
-                    "numero_identificacion": animal.numero_identificacion,
-                    "nombre": animal.nombre,
-                    "sexo": animal.sexo,
-                    "estado": animal.estado,
-                    "sync_version": animal.sync_version,
-                    "updated_at": animal.updated_at.isoformat() if animal.updated_at else None
-                }
-            })
-    
+        updates_from_server = _pull_updates_since_sync(
+            db,
+            current_user.finca_id,
+            sync_request.device_id,
+            sync_request.last_sync,
+        )
+
+    error_note = f" {len(errors)} errores." if errors else ""
     return SyncResponse(
-        success=True,
+        success=len(errors) == 0,
         synced_at=datetime.utcnow(),
         conflicts=conflicts,
         updates_from_server=updates_from_server,
-        message=f"Sincronización completada. {len(conflicts)} conflictos detectados."
+        errors=errors,
+        message=f"Sincronización completada. {len(conflicts)} conflictos detectados.{error_note}"
     )
 
 

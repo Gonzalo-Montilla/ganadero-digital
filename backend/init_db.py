@@ -32,7 +32,7 @@ def init_database():
     
     try:
         # Verificar si ya existe el usuario admin
-        existing_user = db.query(Usuario).filter(Usuario.email == "admin@mifinca.com").first()
+        existing_user = db.query(Usuario).filter(Usuario.email == "admin@example.com").first()
         if existing_user:
             print("ℹ️  Usuario admin ya existe")
             return
@@ -45,16 +45,16 @@ def init_database():
             nit="123456789",
             direccion="Vereda Pueblo Viejo, Río Sucio, Caldas",
             telefono="+57 316 3882979",
-            email="admin@mifinca.com"
+            email="admin@example.com"
         )
         db.add(finca)
         db.flush()
         
         # Crear usuario admin
         usuario = Usuario(
-            email="admin@mifinca.com",
+            email="admin@example.com",
             nombre_completo="Byron Betancur",
-            hashed_password=get_password_hash("password123"),
+            hashed_password=get_password_hash("ChangeMe123!"),
             rol="propietario",
             finca_id=finca.id,
             is_active=True
@@ -65,8 +65,8 @@ def init_database():
         
         print("✅ Base de datos inicializada correctamente")
         print("\n📝 Credenciales de acceso:")
-        print("   Email: admin@mifinca.com")
-        print("   Contraseña: password123")
+        print("   Email: admin@example.com")
+        print("   Contraseña: ChangeMe123!")
         print("\n🏢 Finca: Hacienda Málaga")
         print("👤 Usuario: Byron Betancur (Propietario)")
         

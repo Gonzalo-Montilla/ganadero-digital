@@ -17,3 +17,17 @@ export interface LoginResponse {
   refresh_token: string;
   token_type: string;
 }
+
+export interface OfflineQueuedResponse {
+  queued: true;
+  offline: true;
+}
+
+export function isOfflineQueued(value: unknown): value is OfflineQueuedResponse {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'queued' in value &&
+    (value as OfflineQueuedResponse).queued === true
+  );
+}

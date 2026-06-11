@@ -31,8 +31,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       const userData = await authService.getCurrentUser();
       setUser(userData);
-    } catch (error) {
-      console.error('Error loading user:', error);
+    } catch (error: any) {
+      const status = error?.response?.status;
+      // 401 al iniciar suele significar token vencido/inválido.
+      // Se limpia sesión sin ensuciar consola con un error esperado.
+      if (status && status !== 401) {
+        console.error('Error loading user:', error);
+      }
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
     } finally {

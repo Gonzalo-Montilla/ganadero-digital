@@ -18,13 +18,24 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
-# Directorio para almacenar imágenes
 IMAGENES_DIR = Path("media/animales")
 IMAGENES_DIR.mkdir(parents=True, exist_ok=True)
+MEDIA_URL_PREFIX = "/api/v1/media/animales"
 
-# Extensiones permitidas
 EXTENSIONES_PERMITIDAS = {".jpg", ".jpeg", ".png", ".webp"}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+
+
+def _delete_foto_file(foto_url: str | None) -> None:
+    if not foto_url:
+        return
+    filename = foto_url.split("/")[-1]
+    filepath = IMAGENES_DIR / filename
+    if filepath.exists():
+        try:
+            filepath.unlink()
+        except OSError:
+            pass
 
 
 class ImagenResponse(BaseModel):
@@ -83,7 +94,10 @@ async def subir_foto_animal(
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{current_user.finca_id}_{animal_id}_{timestamp}{extension}"
     filepath = IMAGENES_DIR / filename
-    
+
+    if animal.foto_url:
+        _delete_foto_file(animal.foto_url)
+
     # Guardar archivo
     try:
         with filepath.open("wb") as buffer:
@@ -97,7 +111,7 @@ async def subir_foto_animal(
         file.file.close()
     
     # Actualizar URL en el animal
-    foto_url = f"/media/animales/{filename}"
+    foto_url = f"{MEDIA_URL_PREFIX}/{filename}"
     animal.foto_url = foto_url
     
     db.commit()

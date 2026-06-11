@@ -1,152 +1,97 @@
-# 🚀 GUÍA DE DEPLOY - Ganadero Digital
+# Guía de deploy — Finca El Progreso
 
-## ✅ PREPARACIÓN (YA HECHO)
+Stack: FastAPI (`backend/`) + React/Vite PWA (`frontend/`).
 
-La estructura está lista:
-```
-ganadero-digital-deploy/
-├── backend/    (FastAPI)
-├── frontend/   (React + Vite)
-```
+## 1. Backend (Railway u otro)
 
----
+**Root directory:** `backend`
 
-## 📝 PASOS PARA DEPLOY EN RAILWAY
+**Variables obligatorias:**
 
-### **1. Sube el código a GitHub**
-
-```bash
-cd "C:\Users\USUARIO\Documents\ganadero-digital-deploy"
-
-# Inicializar git
-git init
-
-# Agregar todos los archivos
-git add .
-
-# Primer commit
-git commit -m "Initial commit - Ganadero Digital v1.0"
-
-# Crear repositorio en GitHub y conectar
-# Ve a: https://github.com/new
-# Nombre: ganadero-digital
-# Luego ejecuta:
-
-git remote add origin https://github.com/TU-USUARIO/ganadero-digital.git
-git branch -M main
-git push -u origin main
-```
-
----
-
-### **2. Crear cuenta en Railway**
-
-1. Ve a: https://railway.app
-2. Clic en "Start a New Project"
-3. Login con GitHub
-4. Autoriza Railway
-
----
-
-### **3. Deploy del BACKEND**
-
-1. En Railway → "New Project"
-2. "Deploy from GitHub repo"
-3. Selecciona `ganadero-digital`
-4. Railway detectará Python → Acepta
-5. Ve a **Settings** → **Root Directory** → pon: `backend`
-6. Ve a **Variables** y agrega:
-
-```
-DATABASE_URL=tu-database-url-de-railway-postgresql
-SECRET_KEY=genera-una-clave-segura-aqui-123456789abcdef
+```env
+DATABASE_URL=postgresql://...          # Railway PostgreSQL o tu instancia
+SECRET_KEY=genera-clave-larga-aleatoria
 ALGORITHM=HS256
 DEBUG=False
 ENVIRONMENT=production
+ALLOW_PUBLIC_REGISTRATION=false
+BACKEND_CORS_ORIGINS=https://tu-frontend.up.railway.app,http://localhost:5173
 ```
 
-7. En **Networking** → "Generate Domain"
-8. Copia la URL (ej: `https://ganadero-backend.up.railway.app`)
+**Variables opcionales (correo de alertas):**
+
+```env
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=tu-correo@gmail.com
+SMTP_PASSWORD=app-password-de-gmail
+SMTP_FROM=tu-correo@gmail.com
+SMTP_FROM_NAME=Finca El Progreso
+NOTIFICATIONS_ENABLED=true
+NOTIFICATIONS_DAILY_HOUR=6
+NOTIFICATIONS_DAILY_MINUTE=0
+```
+
+**Comando de arranque típico:**
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+**Migraciones / DB inicial:** ejecutar en el entorno de producción tras el primer deploy (según tu flujo Alembic o script de init).
 
 ---
 
-### **4. Crear PostgreSQL**
+## 2. Frontend (Railway u otro)
 
-1. En el mismo proyecto → "+ New"
-2. "Database" → "PostgreSQL"
-3. Railway creará la DB automáticamente
-4. La variable `DATABASE_URL` se conectará sola al backend
+**Root directory:** `frontend`
 
----
+**Variables:**
 
-### **5. Deploy del FRONTEND**
-
-1. Mismo proyecto → "+ New"
-2. "GitHub Repo" → Selecciona `ganadero-digital` otra vez
-3. Ve a **Settings** → **Root Directory** → pon: `frontend`
-4. Ve a **Variables** y agrega:
-
+```env
+VITE_API_URL=https://tu-backend.up.railway.app/api/v1
 ```
-VITE_API_URL=https://ganadero-backend.up.railway.app/api/v1
-```
-(Usa la URL del backend del paso 3)
 
-5. En **Settings** → **Build Command**:
-```
+Importante: `VITE_API_URL` debe incluir el sufijo `/api/v1`.
+
+**Build:**
+
+```bash
 npm install && npm run build
 ```
 
-6. **Start Command**:
-```
+**Start (preview en producción):**
+
+```bash
 npm run preview -- --host 0.0.0.0 --port $PORT
 ```
 
-7. En **Networking** → "Generate Domain"
-8. Copia la URL del frontend
+O el script `npm start` del `package.json` (build + preview en puerto 8080).
 
 ---
 
-### **6. Inicializar Base de Datos**
+## 3. Checklist post-deploy
 
-Railway ejecutará las migraciones automáticamente al iniciar.
-
----
-
-### **7. ¡LISTO! 🎉**
-
-Tu app estará en:
-- **Frontend**: `https://tu-app.up.railway.app`
-- **Backend**: `https://tu-backend.up.railway.app`
-
-**Credenciales de prueba:**
-- Email: `admin@mifinca.com`
-- Contraseña: `password123`
+1. Login con el usuario bootstrap (registro público desactivado).
+2. CORS: el frontend carga datos sin error CORS en consola.
+3. PWA: en producción, DevTools → Application → Service Worker activo.
+4. Manifest e iconos responden 200 (`/manifest.webmanifest`, `/sw.js`).
+5. Probar offline: crear un animal sin red → badge “Sincronizar (N)” → reconectar → sincronizar.
 
 ---
 
-## 🔧 TROUBLESHOOTING
+## 4. Troubleshooting
 
-### Backend no inicia:
-- Verifica que `DATABASE_URL` esté configurado
-- Revisa logs en Railway
-
-### Frontend no conecta:
-- Verifica `VITE_API_URL` apunte al backend correcto
-- El backend debe tener CORS habilitado (ya está configurado)
-
-### Base de datos vacía:
-- Ejecuta desde la terminal de Railway:
-```bash
-python -c "from app.db.database import init_db; init_db()"
-```
+| Problema | Solución |
+|----------|----------|
+| Backend no arranca | Revisar `DATABASE_URL` y `SECRET_KEY` en logs |
+| CORS bloqueado | Añadir URL exacta del frontend a `BACKEND_CORS_ORIGINS` (sin barra final) |
+| Frontend sin datos | Verificar `VITE_API_URL` y rebuild del frontend tras cambiar la variable |
+| SW no registra | Solo se registra con `import.meta.env.PROD`; usar build de producción |
+| Fotos no cargan | Requieren JWT; rutas `/api/v1/media/...` con sesión activa |
 
 ---
 
-## 💰 COSTOS
+## 5. Costos Railway (referencia)
 
-Railway FREE tier incluye:
-- $5 de crédito mensual
-- Suficiente para 1 backend + 1 frontend + 1 DB PostgreSQL
-- ~500 horas/mes
-
-Para producción real, considera el plan Pro ($20/mes).
+Plan free: ~$5 crédito/mes — suficiente para backend + frontend + PostgreSQL en uso interno. Producción continua: considerar plan Pro.

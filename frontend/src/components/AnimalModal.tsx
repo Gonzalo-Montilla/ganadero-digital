@@ -1,6 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { animalesService } from '../api/animales';
+import { isOfflineQueued } from '../types';
 import type { Animal } from '../types/animal';
+import { Beef, Camera, ImagePlus, SquarePen, X } from 'lucide-react';
+import { getMediaUrl } from '../utils/mediaUrl';
+import AnimalPhotoCapture from './AnimalPhotoCapture';
+import AuthenticatedImage from './AuthenticatedImage';
 
 interface AnimalModalProps {
   isOpen: boolean;
@@ -14,6 +19,9 @@ export default function AnimalModal({ isOpen, onClose, onSave, animal }: AnimalM
   const [error, setError] = useState('');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
   
   const [formData, setFormData] = useState<any>({
     numero_identificacion: '',
@@ -53,7 +61,7 @@ export default function AnimalModal({ isOpen, onClose, onSave, animal }: AnimalM
         potrero_actual: animal.potrero_actual || '',
         observaciones: animal.observaciones || '',
       });
-      setPhotoPreview(animal.foto_url ? `http://localhost:8000${animal.foto_url}` : null);
+      setPhotoPreview(getMediaUrl(animal.foto_url));
       setPhotoFile(null);
     } else {
       // Resetear form si es nuevo
@@ -79,16 +87,26 @@ export default function AnimalModal({ isOpen, onClose, onSave, animal }: AnimalM
     }
   }, [animal, isOpen]);
 
+  const applyPhotoFile = (file: File | undefined) => {
+    if (!file) return;
+    setPhotoFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setPhotoPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setPhotoFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPhotoPreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
+    applyPhotoFile(e.target.files?.[0]);
+    e.target.value = '';
+  };
+
+  const clearPhoto = () => {
+    setPhotoFile(null);
+    setPhotoPreview(getMediaUrl(animal?.foto_url));
+    if (cameraInputRef.current) cameraInputRef.current.value = '';
+    if (galleryInputRef.current) galleryInputRef.current.value = '';
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -111,8 +129,15 @@ export default function AnimalModal({ isOpen, onClose, onSave, animal }: AnimalM
         });
         animalId = animal.id;
       } else {
-        // Crear nuevo
         const response = await animalesService.createAnimal(formData);
+        if (isOfflineQueued(response)) {
+          if (photoFile) {
+            setError('Animal guardado sin conexión. La foto se subirá cuando vuelva internet.');
+          }
+          onSave();
+          onClose();
+          return;
+        }
         animalId = response.id;
       }
       
@@ -137,7 +162,12 @@ export default function AnimalModal({ isOpen, onClose, onSave, animal }: AnimalM
       <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-2xl font-bold text-gray-900">
+            <h2 className="flex items-center gap-2 text-2xl font-bold text-gray-900">
+              {animal ? (
+                <SquarePen className="h-6 w-6 text-brand-700" />
+              ) : (
+                <Beef className="h-6 w-6 text-brand-700" />
+              )}
               {animal ? 'Editar Animal' : 'Nuevo Animal'}
             </h2>
             <button
@@ -352,27 +382,67 @@ export default function AnimalModal({ isOpen, onClose, onSave, animal }: AnimalM
 
             {/* Foto del Animal */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                📸 Foto del Animal
+              <label className="mb-2 block text-sm font-medium text-gray-700">
+                Foto del Animal
               </label>
-              {photoPreview && (
-                <div className="mb-3">
-                  <img
+
+              {photoPreview ? (
+                <div className="relative mb-3 inline-block">
+                  <AuthenticatedImage
                     src={photoPreview}
-                    alt="Preview"
-                    className="h-32 w-32 object-cover rounded-lg border-2 border-gray-300"
+                    alt="Vista previa del animal"
+                    className="h-32 w-32 rounded-lg border-2 border-gray-300 object-cover"
                   />
+                  {photoFile ? (
+                    <button
+                      type="button"
+                      onClick={clearPhoto}
+                      className="absolute -right-2 -top-2 rounded-full bg-rose-600 p-1 text-white shadow-sm hover:bg-rose-700"
+                      aria-label="Quitar foto seleccionada"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  ) : null}
                 </div>
-              )}
+              ) : null}
+
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setCameraOpen(true)}
+                  className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-700"
+                >
+                  <Camera className="h-5 w-5" />
+                  Tomar foto
+                </button>
+                <button
+                  type="button"
+                  onClick={() => galleryInputRef.current?.click()}
+                  className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700 hover:bg-brand-100"
+                >
+                  <ImagePlus className="h-5 w-5" />
+                  Elegir imagen
+                </button>
+              </div>
+
               <input
+                ref={cameraInputRef}
                 type="file"
                 accept="image/*"
                 capture="environment"
                 onChange={handlePhotoChange}
-                className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
+                className="hidden"
               />
-              <p className="mt-1 text-xs text-gray-500">
-                Selecciona una imagen o toma una foto con la cámara
+              <input
+                ref={galleryInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoChange}
+                className="hidden"
+              />
+
+              <p className="mt-2 text-xs text-gray-500">
+                Tomar foto abre la camara del dispositivo. Elegir imagen usa galeria o archivos.
               </p>
             </div>
 
@@ -410,6 +480,16 @@ export default function AnimalModal({ isOpen, onClose, onSave, animal }: AnimalM
           </form>
         </div>
       </div>
+
+      <AnimalPhotoCapture
+        isOpen={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={applyPhotoFile}
+        onFallback={() => {
+          setCameraOpen(false);
+          cameraInputRef.current?.click();
+        }}
+      />
     </div>
   );
 }

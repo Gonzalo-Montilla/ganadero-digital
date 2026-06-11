@@ -443,8 +443,8 @@ Ganadero Digital/
 - Password: postgres
 
 **Usuario de prueba**:
-- Email: admin@mifinca.com
-- Password: password123
+- Email: admin@example.com
+- Password: ChangeMe123!
 - Finca: "Finca El Paraiso"
 - Rol: propietario
 

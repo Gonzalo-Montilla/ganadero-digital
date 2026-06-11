@@ -130,6 +130,60 @@ def listar_registros_sanitarios(
     )
 
 
+@router.get("/animal/{animal_id}/historial", response_model=ControlSanitarioListResponse)
+def obtener_historial_sanitario_animal(
+    *,
+    db: Session = Depends(get_db),
+    animal_id: int,
+    current_user: Usuario = Depends(get_current_user),
+    tipo: str | None = Query(None, description="Filtrar por tipo"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100)
+) -> Any:
+    """
+    Obtener historial sanitario completo de un animal
+    """
+    animal = db.query(Animal).filter(
+        Animal.id == animal_id,
+        Animal.finca_id == current_user.finca_id
+    ).first()
+
+    if not animal:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Animal no encontrado"
+        )
+
+    query = db.query(ControlSanitario).filter(
+        ControlSanitario.animal_id == animal_id,
+        ControlSanitario.finca_id == current_user.finca_id
+    )
+
+    if tipo:
+        query = query.filter(ControlSanitario.tipo == tipo.lower())
+
+    query = query.order_by(ControlSanitario.fecha.desc())
+
+    total = query.count()
+    registros = query.offset(skip).limit(limit).all()
+
+    items = [
+        ControlSanitarioResponse(
+            **registro.__dict__,
+            animal_numero=animal.numero_identificacion,
+            animal_nombre=animal.nombre
+        )
+        for registro in registros
+    ]
+
+    return ControlSanitarioListResponse(
+        total=total,
+        items=items,
+        skip=skip,
+        limit=limit
+    )
+
+
 @router.get("/{registro_id}", response_model=ControlSanitarioResponse)
 def obtener_registro_sanitario(
     *,
@@ -225,61 +279,5 @@ def eliminar_registro_sanitario(
     
     db.delete(registro)
     db.commit()
-    
+
     return None
-
-
-@router.get("/animal/{animal_id}/historial", response_model=ControlSanitarioListResponse)
-def obtener_historial_sanitario_animal(
-    *,
-    db: Session = Depends(get_db),
-    animal_id: int,
-    current_user: Usuario = Depends(get_current_user),
-    tipo: str | None = Query(None, description="Filtrar por tipo"),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=100)
-) -> Any:
-    """
-    Obtener historial sanitario completo de un animal
-    """
-    # Verificar que el animal exista y pertenezca a la finca
-    animal = db.query(Animal).filter(
-        Animal.id == animal_id,
-        Animal.finca_id == current_user.finca_id
-    ).first()
-    
-    if not animal:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Animal no encontrado"
-        )
-    
-    # Query de registros
-    query = db.query(ControlSanitario).filter(
-        ControlSanitario.animal_id == animal_id,
-        ControlSanitario.finca_id == current_user.finca_id
-    )
-    
-    if tipo:
-        query = query.filter(ControlSanitario.tipo == tipo.lower())
-    
-    query = query.order_by(ControlSanitario.fecha.desc())
-    
-    total = query.count()
-    registros = query.offset(skip).limit(limit).all()
-    
-    items = [
-        ControlSanitarioResponse(
-            **registro.__dict__,
-            animal_numero=animal.numero_identificacion,
-            animal_nombre=animal.nombre
-        )
-        for registro in registros
-    ]
-    
-    return ControlSanitarioListResponse(
-        total=total,
-        items=items,
-        skip=skip,
-        limit=limit
-    )

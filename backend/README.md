@@ -153,11 +153,14 @@ ENVIRONMENT=development
 ### 3. Inicializar Base de Datos
 
 ```bash
-# Las tablas se crean automáticamente al iniciar la app
-# O usar Alembic para migraciones:
-alembic init alembic
-alembic revision --autogenerate -m "Initial migration"
+# Usar Alembic para migraciones:
 alembic upgrade head
+```
+
+Para demos locales (opcional), puedes habilitar seed controlado:
+
+```bash
+ENABLE_BOOTSTRAP_SEED=true uvicorn app.main:app --reload
 ```
 
 ### 4. Ejecutar Servidor de Desarrollo

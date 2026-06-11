@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { produccionService } from '../api/produccion';
 import { animalesService } from '../api/animales';
 import type { RegistroProduccion, RegistroProduccionCreate } from '../types/produccion';
 import type { Animal } from '../types/animal';
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
+import { BarChart3, Milk, SquarePen, TrendingUp } from 'lucide-react';
 
 interface Props {
   isOpen: boolean;
@@ -12,6 +14,9 @@ interface Props {
 }
 
 export default function ProduccionModal({ isOpen, onClose, onSave, registro }: Props) {
+  const modalTitleId = 'produccion-modal-title';
+  const modalRef = useRef<HTMLDivElement>(null);
+  const initialFocusRef = useRef<HTMLSelectElement>(null);
   const [animales, setAnimales] = useState<Animal[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -46,9 +51,11 @@ export default function ProduccionModal({ isOpen, onClose, onSave, registro }: P
     }
   }, [isOpen, registro]);
 
+  useModalFocusTrap(isOpen, onClose, modalRef, initialFocusRef);
+
   const loadAnimales = async () => {
     try {
-      const response = await animalesService.getAnimales({ estado: 'activo', limit: 1000 });
+      const response = await animalesService.getAnimalesAll({ estado: 'activo' });
       setAnimales(response.items);
     } catch (error) {
       console.error('Error cargando animales:', error);
@@ -97,18 +104,38 @@ export default function ProduccionModal({ isOpen, onClose, onSave, registro }: P
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
-          <h2 className="text-2xl font-bold text-gray-900">
+    <div
+      className="gd-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 p-4 backdrop-blur-sm"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        ref={modalRef}
+        className="gd-modal-panel gd-modal-surface max-w-2xl max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={modalTitleId}
+      >
+        <div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white/95 px-6 py-4 backdrop-blur">
+          <h2 id={modalTitleId} className="flex items-center gap-2 text-2xl font-extrabold text-slate-900">
+            {registro ? (
+              <SquarePen className="h-6 w-6 text-brand-700" />
+            ) : (
+              <BarChart3 className="h-6 w-6 text-brand-700" />
+            )}
             {registro ? 'Editar Registro' : 'Nuevo Registro de Producción'}
           </h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+          <button
+            onClick={onClose}
+            className="rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+            aria-label="Cerrar modal"
+          >
             <span className="text-2xl">×</span>
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="gd-modal-body p-6 space-y-6">
           {/* Animal y Tipo */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -116,6 +143,7 @@ export default function ProduccionModal({ isOpen, onClose, onSave, registro }: P
                 Animal *
               </label>
               <select
+                ref={initialFocusRef}
                 value={formData.animal_id}
                 onChange={(e) => setFormData({ ...formData, animal_id: parseInt(e.target.value) })}
                 required
@@ -140,10 +168,10 @@ export default function ProduccionModal({ isOpen, onClose, onSave, registro }: P
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="leche">🥛 Leche</option>
-                <option value="carne">🥩 Carne</option>
-                <option value="lana">🧶 Lana</option>
-                <option value="otro">📦 Otro</option>
+                <option value="leche">Leche</option>
+                <option value="carne">Carne</option>
+                <option value="lana">Lana</option>
+                <option value="otro">Otro</option>
               </select>
             </div>
           </div>
@@ -165,7 +193,10 @@ export default function ProduccionModal({ isOpen, onClose, onSave, registro }: P
           {/* Campos específicos para Leche */}
           {formData.tipo_produccion === 'leche' && (
             <div className="bg-blue-50 p-4 rounded-lg space-y-4">
-              <h3 className="font-semibold text-blue-900">Producción Lechera</h3>
+              <h3 className="flex items-center gap-2 font-semibold text-blue-900">
+                <Milk className="h-4 w-4 text-brand-700" />
+                Producción Lechera
+              </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -191,9 +222,9 @@ export default function ProduccionModal({ isOpen, onClose, onSave, registro }: P
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="">Sin turno</option>
-                    <option value="manana">🌅 Mañana</option>
-                    <option value="tarde">☀️ Tarde</option>
-                    <option value="noche">🌙 Noche</option>
+                    <option value="manana">Mañana</option>
+                    <option value="tarde">Tarde</option>
+                    <option value="noche">Noche</option>
                   </select>
                 </div>
 
@@ -207,9 +238,9 @@ export default function ProduccionModal({ isOpen, onClose, onSave, registro }: P
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="">Sin especificar</option>
-                    <option value="alta">⭐ Alta</option>
-                    <option value="media">➖ Media</option>
-                    <option value="baja">⬇️ Baja</option>
+                    <option value="alta">Alta</option>
+                    <option value="media">Media</option>
+                    <option value="baja">Baja</option>
                   </select>
                 </div>
               </div>
@@ -219,7 +250,10 @@ export default function ProduccionModal({ isOpen, onClose, onSave, registro }: P
           {/* Campos específicos para Carne */}
           {formData.tipo_produccion === 'carne' && (
             <div className="bg-red-50 p-4 rounded-lg space-y-4">
-              <h3 className="font-semibold text-red-900">Producción Cárnica</h3>
+              <h3 className="flex items-center gap-2 font-semibold text-red-900">
+                <TrendingUp className="h-4 w-4 text-brand-700" />
+                Producción Cárnica
+              </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -245,9 +279,9 @@ export default function ProduccionModal({ isOpen, onClose, onSave, registro }: P
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="">Sin especificar</option>
-                    <option value="alta">⭐ Alta</option>
-                    <option value="media">➖ Media</option>
-                    <option value="baja">⬇️ Baja</option>
+                    <option value="alta">Alta</option>
+                    <option value="media">Media</option>
+                    <option value="baja">Baja</option>
                   </select>
                 </div>
               </div>
@@ -273,14 +307,14 @@ export default function ProduccionModal({ isOpen, onClose, onSave, registro }: P
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+              className="gd-btn-secondary"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400"
+              className="gd-btn-primary disabled:opacity-60"
             >
               {loading ? 'Guardando...' : registro ? 'Actualizar' : 'Crear'}
             </button>

@@ -2,24 +2,60 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import Metricas from './pages/Metricas';
 import Animales from './pages/Animales';
 import ControlSanitario from './pages/ControlSanitario';
 import ControlReproductivo from './pages/ControlReproductivo';
 import Produccion from './pages/Produccion';
 import Transacciones from './pages/Transacciones';
+import Usuarios from './pages/Usuarios';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-xl text-gray-600">Cargando...</div>
+      <div className="flex min-h-screen items-center justify-center px-4">
+        <div className="gd-card p-8 text-center">
+          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-brand-100 border-t-brand-600" />
+          <p className="mt-3 text-sm font-semibold text-slate-600">Cargando tu finca...</p>
+        </div>
       </div>
     );
   }
 
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
+}
+
+function RoleRoute({
+  children,
+  roles,
+}: {
+  children: React.ReactNode;
+  roles: string[];
+}) {
+  const { user, loading, isAuthenticated } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4">
+        <div className="gd-card p-8 text-center">
+          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-brand-100 border-t-brand-600" />
+          <p className="mt-3 text-sm font-semibold text-slate-600">Cargando tu finca...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" />;
+  }
+
+  if (!user || !roles.includes(user.rol)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <>{children}</>;
 }
 
 function App() {
@@ -33,6 +69,14 @@ function App() {
             element={
               <PrivateRoute>
                 <Dashboard />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/metricas"
+            element={
+              <PrivateRoute>
+                <Metricas />
               </PrivateRoute>
             }
           />
@@ -76,7 +120,16 @@ function App() {
               </PrivateRoute>
             }
           />
+          <Route
+            path="/usuarios"
+            element={
+              <RoleRoute roles={['propietario', 'admin']}>
+                <Usuarios />
+              </RoleRoute>
+            }
+          />
           <Route path="/" element={<Navigate to="/dashboard" />} />
+          <Route path="*" element={<Navigate to="/dashboard" />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

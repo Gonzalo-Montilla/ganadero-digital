@@ -4,15 +4,35 @@ import { useState, useEffect } from 'react';
 import { dashboardService, type DashboardStats } from '../api/dashboard';
 import AlertasWidget from '../components/AlertasWidget';
 import Footer from '../components/Footer';
+import AppShell from '../components/AppShell';
+import { Activity, Baby, BarChart3, DollarSign, HeartPulse, Stethoscope, Wallet } from 'lucide-react';
+
+const quickActions = [
+  { to: '/animales', Icon: Activity, title: 'Animales', description: 'Inventario y hoja de vida' },
+  { to: '/control-sanitario', Icon: Stethoscope, title: 'Sanidad', description: 'Vacunas y tratamientos' },
+  { to: '/control-reproductivo', Icon: Baby, title: 'Reproductivo', description: 'Servicios y partos' },
+  { to: '/produccion', Icon: BarChart3, title: 'Produccion', description: 'Leche, peso y rendimiento' },
+  { to: '/transacciones', Icon: Wallet, title: 'Finanzas', description: 'Ingresos y gastos' },
+];
 
 export default function Dashboard() {
+  const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [online, setOnline] = useState<boolean>(isOnline);
 
   useEffect(() => {
     loadStats();
+    const goOnline = () => setOnline(true);
+    const goOffline = () => setOnline(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
   }, []);
 
   const loadStats = async () => {
@@ -27,162 +47,153 @@ export default function Dashboard() {
     }
   };
 
-  const formatMoney = (value: number) => {
-    return new Intl.NumberFormat('es-CO', {
-      style: 'currency',
-      currency: 'COP',
-      minimumFractionDigits: 0,
-    }).format(value);
-  };
+  const formatMoney = (value: number) =>
+    new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value);
+
+  const kpis = [
+    {
+      label: 'Total Animales',
+      value: stats?.total_animales ?? 0,
+      detail: `${stats?.animales_activos ?? 0} activos`,
+      Icon: Activity,
+      to: '/animales',
+    },
+    {
+      label: 'Alertas Sanitarias',
+      value: stats?.controles_sanitarios_mes ?? 0,
+      detail: 'revisar esta semana',
+      Icon: HeartPulse,
+      to: '/control-sanitario',
+    },
+    {
+      label: 'Hembras Prenadas',
+      value: stats?.hembras_prenadas ?? 0,
+      detail: `${stats?.proximos_partos ?? 0} partos proximos`,
+      Icon: Baby,
+      to: '/control-reproductivo',
+    },
+    {
+      label: 'Balance del Mes',
+      value: formatMoney(stats?.balance_mes ?? 0),
+      detail: 'ingresos - gastos',
+      Icon: DollarSign,
+      to: '/transacciones',
+    },
+  ];
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Header */}
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex justify-between items-center">
-          <div className="text-center">
-            <h1 className="text-2xl font-bold text-gray-900">🐄 HACIENDA MÁLAGA</h1>
-            <p className="text-sm text-gray-600">Ganadero Digital</p>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600">
-              {user?.nombre_completo} ({user?.rol})
-            </span>
-            <button
-              onClick={logout}
-              className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md"
-            >
-              Cerrar Sesión
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+    <>
+      <AppShell
+        title="Panel de Finca"
+        subtitle="Resumen del dia y tareas prioritarias"
+        userName={user?.nombre_completo}
+        role={user?.rol}
+        online={online}
+        onLogout={logout}
+        rightSlot={
+          <button onClick={loadStats} className="gd-btn-secondary !py-2">
+            Actualizar
+          </button>
+        }
+      >
         {loading ? (
-          <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Cargando estadísticas...</p>
+          <div className="gd-card p-10 text-center">
+            <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-brand-100 border-t-brand-600" />
+            <p className="mt-4 text-sm font-medium text-slate-600">Cargando indicadores...</p>
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {/* Card 1 */}
-              <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition cursor-pointer" onClick={() => navigate('/animales')}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Total Animales</p>
-                    <p className="text-3xl font-bold text-gray-900">{stats?.total_animales || 0}</p>
-                    <p className="text-xs text-green-600 mt-1">{stats?.animales_activos || 0} activos</p>
+            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {kpis.map((item) => (
+                <button
+                  key={item.label}
+                  onClick={() => navigate(item.to)}
+                  className="gd-card p-5 text-left transition hover:-translate-y-0.5 hover:border-brand-200"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-500">{item.label}</p>
+                      <p className="mt-1 text-2xl font-extrabold text-slate-900">{item.value}</p>
+                      <p className="mt-2 text-xs text-slate-500">{item.detail}</p>
+                    </div>
+                    <item.Icon className="h-8 w-8 text-brand-700" />
                   </div>
-                  <div className="text-4xl">🐄</div>
-                </div>
-              </div>
+                </button>
+              ))}
+            </section>
 
-              {/* Card 2 */}
-              <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition cursor-pointer" onClick={() => navigate('/control-sanitario')}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Controles Mes</p>
-                    <p className="text-3xl font-bold text-gray-900">{stats?.controles_sanitarios_mes || 0}</p>
-                    <p className="text-xs text-blue-600 mt-1">Sanitarios</p>
-                  </div>
-                  <div className="text-4xl">💉</div>
-                </div>
+            <section className="mt-5 grid gap-4 md:grid-cols-3">
+              <div className="gd-card p-5">
+                <p className="text-sm font-semibold text-slate-500">Carga animal</p>
+                <p className="mt-1 text-3xl font-extrabold text-brand-700">{stats?.carga_animal_hectarea ?? 0}</p>
+                <p className="text-xs text-slate-500">cabezas por hectarea</p>
               </div>
-
-              {/* Card 3 */}
-              <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition cursor-pointer" onClick={() => navigate('/control-reproductivo')}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Hembras Preñadas</p>
-                    <p className="text-3xl font-bold text-gray-900">{stats?.hembras_prenadas || 0}</p>
-                    {stats?.proximos_partos ? (
-                      <p className="text-xs text-pink-600 mt-1">{stats.proximos_partos} partos próximos</p>
-                    ) : null}
-                  </div>
-                  <div className="text-4xl">🤰</div>
-                </div>
+              <div className="gd-card p-5">
+                <p className="text-sm font-semibold text-slate-500">Costo por litro</p>
+                <p className="mt-1 text-3xl font-extrabold text-slate-900">{formatMoney(stats?.costo_por_litro ?? 0)}</p>
+                <p className="text-xs text-slate-500">estimado mensual</p>
               </div>
-
-              {/* Card 4 */}
-              <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition cursor-pointer" onClick={() => navigate('/transacciones')}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Balance Mes</p>
-                    <p className={`text-3xl font-bold ${(stats?.balance_mes || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {formatMoney(stats?.balance_mes || 0)}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">Ingresos - Gastos</p>
-                  </div>
-                  <div className="text-4xl">💰</div>
-                </div>
+              <div className="gd-card p-5">
+                <p className="text-sm font-semibold text-slate-500">Costo por kilo</p>
+                <p className="mt-1 text-3xl font-extrabold text-slate-900">{formatMoney(stats?.costo_por_kg_estimado ?? 0)}</p>
+                <p className="text-xs text-slate-500">estimado por activo</p>
               </div>
-            </div>
+            </section>
 
-            {/* Widget de Alertas */}
-            <div className="mt-6">
+            <section className="mt-5">
               <AlertasWidget />
-            </div>
+            </section>
+
+            <section className="mt-5 grid gap-4 xl:grid-cols-2">
+              <div className="gd-card p-5">
+                <h3 className="gd-section-title">Analisis de descarte</h3>
+                {stats?.analisis_descarte?.length ? (
+                  <ul className="mt-3 space-y-2 text-sm text-slate-700">
+                    {stats.analisis_descarte.slice(0, 5).map((item, idx) => (
+                      <li key={idx} className="rounded-xl bg-slate-50 px-3 py-2">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-sm text-slate-500">No hay animales marcados para descarte.</p>
+                )}
+              </div>
+
+              <div className="gd-card p-5">
+                <h3 className="gd-section-title">Proyeccion de inventario</h3>
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  {Object.entries(stats?.proyeccion_inventario || {}).map(([key, value]) => (
+                    <div key={key} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs font-semibold uppercase text-slate-500">{key.split('_').join(' ')}</p>
+                      <p className="mt-1 text-2xl font-extrabold text-slate-900">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="mt-5 gd-card p-5">
+              <h3 className="gd-section-title">Acciones rapidas</h3>
+              <p className="mt-1 text-sm text-slate-500">Todo en pocos toques para trabajar en campo.</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                {quickActions.map((item) => (
+                  <button
+                    key={item.to}
+                    onClick={() => navigate(item.to)}
+                    className="rounded-xl border border-brand-100 bg-brand-50 p-4 text-left transition hover:border-brand-300 hover:bg-brand-100"
+                  >
+                    <item.Icon className="h-7 w-7 text-brand-700" />
+                    <p className="mt-2 text-sm font-bold text-slate-900">{item.title}</p>
+                    <p className="mt-1 text-xs text-slate-600">{item.description}</p>
+                  </button>
+                ))}
+              </div>
+            </section>
           </>
         )}
-
-        {/* Bienvenida */}
-        <div className="mt-8 bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">
-            ¡Bienvenido, {user?.nombre_completo}!
-          </h2>
-          <p className="text-gray-600">
-            Este es tu panel de control. Desde aquí podrás gestionar tu finca, 
-            registrar animales, llevar control sanitario y reproductivo, 
-            y manejar las finanzas de tu explotación ganadera.
-          </p>
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <button
-              onClick={() => navigate('/animales')}
-              className="block w-full text-left p-4 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition"
-            >
-              <div className="text-3xl mb-2">🐂</div>
-              <h3 className="font-semibold text-gray-900">Animales</h3>
-              <p className="text-sm text-gray-600">Gestionar inventario</p>
-            </button>
-            <button
-              onClick={() => navigate('/control-sanitario')}
-              className="block w-full text-left p-4 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition"
-            >
-              <div className="text-3xl mb-2">💉</div>
-              <h3 className="font-semibold text-gray-900">Sanidad</h3>
-              <p className="text-sm text-gray-600">Control sanitario</p>
-            </button>
-            <button
-              onClick={() => navigate('/control-reproductivo')}
-              className="block w-full text-left p-4 bg-pink-50 border border-pink-200 rounded-lg hover:bg-pink-100 transition"
-            >
-              <div className="text-3xl mb-2">🍼</div>
-              <h3 className="font-semibold text-gray-900">Reproducción</h3>
-              <p className="text-sm text-gray-600">Servicios y partos</p>
-            </button>
-            <button
-              onClick={() => navigate('/produccion')}
-              className="block w-full text-left p-4 bg-yellow-50 border border-yellow-200 rounded-lg hover:bg-yellow-100 transition"
-            >
-              <div className="text-3xl mb-2">📊</div>
-              <h3 className="font-semibold text-gray-900">Producción</h3>
-              <p className="text-sm text-gray-600">Leche, carne y más</p>
-            </button>
-            <button
-              onClick={() => navigate('/transacciones')}
-              className="block w-full text-left p-4 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition"
-            >
-              <div className="text-3xl mb-2">💰</div>
-              <h3 className="font-semibold text-gray-900">Transacciones</h3>
-              <p className="text-sm text-gray-600">Ingresos y gastos</p>
-            </button>
-          </div>
-        </div>
-      </main>
+      </AppShell>
       <Footer />
-    </div>
+    </>
   );
 }
