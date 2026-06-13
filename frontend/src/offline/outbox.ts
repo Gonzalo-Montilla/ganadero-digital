@@ -1,8 +1,9 @@
 import axios from 'axios';
 import { deleteOutboxOperation, listOutboxOperations, putOutboxOperation, type OutboxOperation } from './db';
 import apiClient from '../api/client';
+import { getApiUrl } from '../config/apiUrl';
 
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1').replace(/\/$/, '');
+const API_BASE = getApiUrl();
 
 function emitOutboxChanged(): void {
   if (typeof window !== 'undefined') {

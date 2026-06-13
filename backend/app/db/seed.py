@@ -18,6 +18,9 @@ def seed_initial_data(db: Session) -> None:
 
     existing_user = db.query(Usuario).filter(Usuario.email == bootstrap_email).first()
     if existing_user:
+        existing_user.hashed_password = get_password_hash(bootstrap_password)
+        existing_user.activo = True
+        existing_user.email_verificado = True
         return
 
     finca = Finca(

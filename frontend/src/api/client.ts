@@ -1,8 +1,9 @@
 import axios from 'axios';
 import { enqueueOperation } from '../offline/outbox';
 import { cacheGetResponse, cacheReadResponse } from '../offline/cache';
+import { getApiUrl } from '../config/apiUrl';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+const API_URL = getApiUrl();
 
 export const apiClient = axios.create({
   baseURL: API_URL,

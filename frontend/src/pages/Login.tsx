@@ -23,7 +23,11 @@ export default function Login() {
       await login(email, password);
       navigate('/dashboard');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Error al iniciar sesión');
+      if (!err.response) {
+        setError('No se pudo conectar con el servidor. Revise la URL del backend (VITE_API_URL).');
+      } else {
+        setError(err.response?.data?.detail || 'Error al iniciar sesión');
+      }
     } finally {
       setLoading(false);
     }
