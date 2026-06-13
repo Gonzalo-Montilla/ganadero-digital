@@ -2,16 +2,21 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { sanitariosService } from '../api/sanitarios';
 import ControlSanitarioModal from '../components/ControlSanitarioModal';
+import SanitarioDetailsModal from '../components/SanitarioDetailsModal';
+import SanitarioCard from '../components/cards/SanitarioCard';
+import EntityCardGrid from '../components/cards/EntityCardGrid';
 import AplicarVacunaModal from '../components/AplicarVacunaModal';
 import type { ControlSanitario } from '../types/sanitario';
 import { useAuth } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
 import { vacunaPendienteAplicar } from '../utils/vacunaPendiente';
+import { useAnimalPhotos } from '../hooks/useAnimalPhotos';
 
 export default function ControlSanitarioPage() {
   const { user, logout } = useAuth();
   const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
   const [searchParams, setSearchParams] = useSearchParams();
+  const { photos: animalPhotos } = useAnimalPhotos();
   const [controles, setControles] = useState<ControlSanitario[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -23,6 +28,7 @@ export default function ControlSanitarioPage() {
   
   // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [selectedControl, setSelectedControl] = useState<ControlSanitario | null>(null);
   const [isAplicarModalOpen, setIsAplicarModalOpen] = useState(false);
   const [registroAplicar, setRegistroAplicar] = useState<ControlSanitario | null>(null);
@@ -101,8 +107,13 @@ export default function ControlSanitarioPage() {
     setIsModalOpen(true);
   };
 
-  const handleEditar = (control: ControlSanitario) => {
+  const openDetails = (control: ControlSanitario) => {
     setSelectedControl(control);
+    setIsDetailsOpen(true);
+  };
+
+  const openEdit = () => {
+    setIsDetailsOpen(false);
     setIsModalOpen(true);
   };
 
@@ -111,47 +122,13 @@ export default function ControlSanitarioPage() {
     setIsAplicarModalOpen(true);
   };
 
-  const renderAcciones = (control: ControlSanitario, compact = false) => (
-    <div className={compact ? 'mt-3 flex flex-wrap gap-2' : 'whitespace-nowrap text-right text-sm font-medium'}>
-      {vacunaPendienteAplicar(control) ? (
-        <button
-          type="button"
-          onClick={() => handleAplicarVacuna(control)}
-          className={
-            compact
-              ? 'rounded-xl bg-brand-600 px-3 py-2 text-xs font-bold text-white hover:bg-brand-700'
-              : 'mr-3 font-semibold text-brand-700 hover:text-brand-900'
-          }
-        >
-          Aplicar vacuna
-        </button>
-      ) : null}
-      <button
-        type="button"
-        onClick={() => handleEditar(control)}
-        className={compact ? 'gd-btn-secondary !px-3 !py-2 text-xs' : 'text-sky-600 hover:text-sky-800 mr-3'}
-      >
-        Editar
-      </button>
-      <button
-        type="button"
-        onClick={() => handleEliminar(control.id)}
-        className={
-          compact
-            ? 'rounded-xl border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50'
-            : 'text-red-600 hover:text-red-900'
-        }
-      >
-        Eliminar
-      </button>
-    </div>
-  );
-
   const handleEliminar = async (id: number) => {
     if (!confirm('¿Estás seguro de eliminar este registro?')) return;
 
     try {
       await sanitariosService.deleteControlSanitario(id);
+      setIsDetailsOpen(false);
+      setSelectedControl(null);
       loadControles();
     } catch (error) {
       console.error('Error eliminando registro:', error);
@@ -163,32 +140,6 @@ export default function ControlSanitarioPage() {
     loadControles();
   };
 
-  const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return '-';
-    return new Date(dateStr).toLocaleDateString('es-CO');
-  };
-
-  const getTipoIcon = (tipo: string) => {
-    switch (tipo) {
-      case 'vacuna': return 'Vacuna';
-      case 'desparasitacion': return 'Desparasitación';
-      case 'tratamiento': return 'Tratamiento';
-      case 'cirugia': return 'Cirugía';
-      default: return 'Otro';
-    }
-  };
-
-  const getTipoColor = (tipo: string) => {
-    switch (tipo) {
-      case 'vacuna': return 'bg-blue-100 text-blue-800';
-      case 'desparasitacion': return 'bg-green-100 text-green-800';
-      case 'tratamiento': return 'bg-yellow-100 text-yellow-800';
-      case 'cirugia': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  // Filtrar localmente por animal
   const controlesFiltrados = controles.filter((c) => {
     if (filtroAnimalId != null && c.animal_id !== filtroAnimalId) {
       return false;
@@ -261,93 +212,39 @@ export default function ControlSanitarioPage() {
           </div>
         </div>
 
-        {/* Tabla */}
+        {/* Tarjetas */}
         <div className="gd-card overflow-hidden">
-          {loading ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600 mx-auto"></div>
-              <p className="mt-4 text-slate-600">Cargando registros...</p>
-            </div>
-          ) : controlesFiltrados.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-slate-500 text-lg">No hay registros sanitarios</p>
-              <button
-                onClick={handleNuevo}
-                className="mt-4 text-brand-600 hover:text-brand-700 font-semibold"
-              >
+          <EntityCardGrid
+            loading={loading}
+            empty={!loading && controlesFiltrados.length === 0}
+            emptyMessage="No hay registros sanitarios"
+            emptyAction={
+              <button type="button" onClick={handleNuevo} className="font-semibold text-brand-600">
                 + Crear el primer registro
               </button>
-            </div>
-          ) : (
-            <>
-              <div className="space-y-3 p-3 md:hidden">
-                {controlesFiltrados.map((control) => (
-                  <article key={control.id} className="rounded-xl border border-slate-200 bg-white p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-bold text-slate-900">{control.animal_numero || `ID: ${control.animal_id}`}</p>
-                        <p className="text-xs text-slate-500">{formatDate(control.fecha)}</p>
-                      </div>
-                      <span className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold ${getTipoColor(control.tipo)}`}>
-                        {getTipoIcon(control.tipo)}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-sm text-slate-700">{control.producto || 'Sin producto'}</p>
-                    {control.veterinario ? <p className="text-xs text-slate-500">Vet: {control.veterinario}</p> : null}
-                    {control.proxima_dosis ? <p className="text-xs text-orange-600">Próxima: {formatDate(control.proxima_dosis)}</p> : null}
-                    {renderAcciones(control, true)}
-                  </article>
-                ))}
-              </div>
-
-              <div className="hidden overflow-x-auto md:block">
-                <table className="min-w-full divide-y divide-slate-200">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Fecha</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Animal</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Tipo</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Producto</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Veterinario</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Próxima Dosis</th>
-                      <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-slate-200">
-                    {controlesFiltrados.map((control) => (
-                      <tr key={control.id} className="hover:bg-brand-50/30">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{formatDate(control.fecha)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <div className="font-medium text-slate-900">{control.animal_numero || `ID: ${control.animal_id}`}</div>
-                          {control.animal_nombre && <div className="text-slate-500">{control.animal_nombre}</div>}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTipoColor(control.tipo)}`}>
-                            {getTipoIcon(control.tipo)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-slate-900">
-                          <div className="max-w-xs truncate">{control.producto || '-'}</div>
-                          {control.dosis && <div className="text-xs text-slate-500">{control.dosis}</div>}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{control.veterinario || '-'}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          {control.proxima_dosis ? <span className="text-orange-600 font-medium">{formatDate(control.proxima_dosis)}</span> : <span className="text-slate-400">-</span>}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          {renderAcciones(control)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
+            }
+          >
+            {controlesFiltrados.map((control) => (
+              <SanitarioCard
+                key={control.id}
+                control={control}
+                animalFotoUrl={animalPhotos.get(control.animal_id)?.foto_url}
+                onClick={() => openDetails(control)}
+              />
+            ))}
+          </EntityCardGrid>
         </div>
       </div>
 
-      {/* Modal */}
+      <SanitarioDetailsModal
+        isOpen={isDetailsOpen}
+        onClose={() => setIsDetailsOpen(false)}
+        control={selectedControl}
+        animalFotoUrl={selectedControl ? animalPhotos.get(selectedControl.animal_id)?.foto_url : null}
+        onEdit={openEdit}
+        onDelete={() => selectedControl && void handleEliminar(selectedControl.id)}
+        onAplicarVacuna={() => selectedControl && handleAplicarVacuna(selectedControl)}
+      />
       <ControlSanitarioModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}

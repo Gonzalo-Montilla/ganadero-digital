@@ -16,8 +16,17 @@ from app.schemas.animal import (
     AnimalResponse,
     AnimalListResponse
 )
+from app.schemas.baja_animal import BajaMuerteRequest, BajaMuerteResponse
 from app.schemas.hoja_vida import HojaVidaReproductivaResponse
+from app.schemas.pesaje import AnimalFaenaCandidato, PesajeCreate, PesajeResponse
 from app.services.animal_hoja_vida_service import build_hoja_vida_reproductiva
+from app.services.pesaje_service import (
+    calcular_ganancia_kg_dia,
+    listar_candidatos_faena,
+    peso_objetivo_faena,
+    registrar_pesaje,
+)
+from app.models.historial_pesaje import HistorialPesaje
 
 router = APIRouter()
 
@@ -190,6 +199,139 @@ def mover_animales_lote(
     )
 
 
+@router.get("/candidatos-faena", response_model=list[AnimalFaenaCandidato])
+def list_candidatos_faena(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """Animales activos de ceba/doble propósito que alcanzaron peso objetivo para faena."""
+    candidatos = listar_candidatos_faena(db, current_user.finca_id)
+    resultado: list[AnimalFaenaCandidato] = []
+    for animal in candidatos:
+        resultado.append(
+            AnimalFaenaCandidato(
+                id=animal.id,
+                numero_identificacion=animal.numero_identificacion,
+                nombre=animal.nombre,
+                categoria=animal.categoria,
+                proposito=animal.proposito,
+                peso_actual=animal.peso_actual,
+                peso_objetivo=peso_objetivo_faena(animal),
+                ultima_fecha_pesaje=animal.ultima_fecha_pesaje,
+                ganancia_kg_dia=calcular_ganancia_kg_dia(db, animal.id),
+            )
+        )
+    return resultado
+
+
+@router.get("/{animal_id}/pesajes", response_model=list[PesajeResponse])
+def list_pesajes_animal(
+    animal_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    animal = db.query(Animal).filter(
+        Animal.id == animal_id,
+        Animal.finca_id == current_user.finca_id,
+    ).first()
+    if not animal:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Animal no encontrado")
+
+    pesajes = (
+        db.query(HistorialPesaje)
+        .filter(
+            HistorialPesaje.animal_id == animal_id,
+            HistorialPesaje.finca_id == current_user.finca_id,
+        )
+        .order_by(HistorialPesaje.fecha.desc(), HistorialPesaje.id.desc())
+        .all()
+    )
+    return pesajes
+
+
+@router.post("/{animal_id}/pesajes", response_model=PesajeResponse, status_code=status.HTTP_201_CREATED)
+def crear_pesaje_animal(
+    animal_id: int,
+    payload: PesajeCreate,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    animal = db.query(Animal).filter(
+        Animal.id == animal_id,
+        Animal.finca_id == current_user.finca_id,
+    ).first()
+    if not animal:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Animal no encontrado")
+    if animal.estado != "activo":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Solo se pueden registrar pesajes en animales activos",
+        )
+
+    registro = registrar_pesaje(
+        db,
+        animal=animal,
+        finca_id=current_user.finca_id,
+        fecha=payload.fecha,
+        peso_kg=payload.peso_kg,
+        observaciones=payload.observaciones,
+        registrado_por=current_user.id,
+    )
+    animal.sync_version += 1
+    animal.sync_status = "pending"
+    db.commit()
+    db.refresh(registro)
+    return registro
+
+
+@router.post("/{animal_id}/baja-muerte", response_model=BajaMuerteResponse, status_code=status.HTTP_200_OK)
+def registrar_baja_muerte(
+    animal_id: int,
+    payload: BajaMuerteRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """
+    Registrar muerte de un animal activo.
+    Distinto de venta/faena: no genera ingreso ni transacción financiera.
+    """
+    animal = db.query(Animal).filter(
+        Animal.id == animal_id,
+        Animal.finca_id == current_user.finca_id,
+    ).first()
+    if not animal:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Animal no encontrado")
+    if animal.estado != "activo":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Solo se puede registrar muerte en animales activos (estado actual: {animal.estado})",
+        )
+
+    motivo_completo = payload.motivo.strip()
+    if payload.observaciones:
+        motivo_completo = f"{motivo_completo}. {payload.observaciones.strip()}"
+
+    animal.estado = "muerto"
+    animal.fecha_salida = payload.fecha
+    animal.motivo_salida = motivo_completo
+    animal.lote_actual = None
+    animal.potrero_actual = None
+    animal.sync_version += 1
+    animal.sync_status = "pending"
+
+    db.commit()
+    db.refresh(animal)
+
+    return BajaMuerteResponse(
+        id=animal.id,
+        numero_identificacion=animal.numero_identificacion,
+        estado=animal.estado,
+        fecha_salida=animal.fecha_salida,
+        motivo_salida=animal.motivo_salida,
+        mensaje=f"Animal {animal.numero_identificacion} registrado como muerto",
+    )
+
+
 @router.get("/{animal_id}", response_model=AnimalResponse)
 def get_animal(
     animal_id: int,
@@ -237,11 +379,23 @@ def update_animal(
     # Actualizar solo los campos proporcionados
     update_data = animal_data.model_dump(exclude_unset=True)
 
-    if "estado" in update_data and update_data["estado"] in ("vendido", "muerto"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Para marcar un animal como vendido o muerto use el módulo de transacciones"
-        )
+    if "estado" in update_data:
+        nuevo_estado = update_data["estado"]
+        if nuevo_estado == "vendido":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Para vender un animal use Finanzas → Venta → Animal sacrificio/faena",
+            )
+        if nuevo_estado == "muerto":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Para registrar la muerte use Inventario → Ver animal → Registrar muerte",
+            )
+        if animal.estado != "activo" and nuevo_estado == "activo":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No se puede reactivar un animal dado de baja desde aquí",
+            )
     
     # Verificar identificación única si se está actualizando
     if "numero_identificacion" in update_data:

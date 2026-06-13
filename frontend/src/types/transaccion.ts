@@ -1,3 +1,6 @@
+import type { RubroVenta } from '../constants/rubroVenta';
+import type { RubroAfectacion } from '../constants/rubroAfectacion';
+
 export interface Transaccion {
   id: number;
   finca_id: number;
@@ -5,27 +8,23 @@ export interface Transaccion {
   fecha: string;
   concepto: string;
   monto: number;
-  
-  // Ventas/compras de animales
+
   animal_id?: number | null;
   numero_animales?: number | null;
   peso_total?: number | null;
   precio_por_kg?: number | null;
-  
-  // Información del tercero
+
+  rubro_venta?: RubroVenta | null;
+  cantidad_litros?: number | null;
+  precio_por_litro?: number | null;
+
   tercero?: string | null;
   documento_tercero?: string | null;
-  
-  // Método de pago
   metodo_pago?: string | null;
-  
-  // Categoría de gasto
   categoria_gasto?: string | null;
-  
-  // Observaciones
+  rubro_afectacion?: RubroAfectacion | null;
   observaciones?: string | null;
-  
-  // Info adicional
+
   animal_numero?: string | null;
   animal_nombre?: string | null;
   registrado_por?: number | null;
@@ -40,10 +39,14 @@ export interface TransaccionCreate {
   numero_animales?: number | null;
   peso_total?: number | null;
   precio_por_kg?: number | null;
+  rubro_venta?: RubroVenta | null;
+  cantidad_litros?: number | null;
+  precio_por_litro?: number | null;
   tercero?: string | null;
   documento_tercero?: string | null;
   metodo_pago?: string | null;
   categoria_gasto?: string | null;
+  rubro_afectacion?: RubroAfectacion | null;
   observaciones?: string | null;
 }
 
@@ -56,10 +59,14 @@ export interface TransaccionUpdate {
   numero_animales?: number | null;
   peso_total?: number | null;
   precio_por_kg?: number | null;
+  rubro_venta?: RubroVenta | null;
+  cantidad_litros?: number | null;
+  precio_por_litro?: number | null;
   tercero?: string | null;
   documento_tercero?: string | null;
   metodo_pago?: string | null;
   categoria_gasto?: string | null;
+  rubro_afectacion?: RubroAfectacion | null;
   observaciones?: string | null;
 }
 
@@ -78,4 +85,12 @@ export interface ResumenFinanciero {
   ventas_mes_actual: number;
   gastos_mes_actual: number;
   gasto_por_categoria: Record<string, number>;
+  ventas_leche: number;
+  ventas_animales: number;
+  ventas_otros: number;
+  gastos_leche: number;
+  gastos_ceba: number;
+  gastos_general: number;
+  margen_leche: number;
+  margen_ceba: number;
 }

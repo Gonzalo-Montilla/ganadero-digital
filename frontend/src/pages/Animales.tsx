@@ -5,6 +5,9 @@ import type { Animal } from '../types/animal';
 import { useAuth } from '../context/AuthContext';
 import AnimalModal from '../components/AnimalModal';
 import AnimalDetailsModal from '../components/AnimalDetailsModal';
+import RegistrarMuerteModal from '../components/RegistrarMuerteModal';
+import AnimalCard from '../components/cards/AnimalCard';
+import EntityCardGrid from '../components/cards/EntityCardGrid';
 import AppShell from '../components/AppShell';
 import { Beef } from 'lucide-react';
 
@@ -15,6 +18,7 @@ export default function Animales() {
   const [total, setTotal] = useState(0);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [isMuerteModalOpen, setIsMuerteModalOpen] = useState(false);
   const [selectedAnimal, setSelectedAnimal] = useState<Animal | null>(null);
   const [filtroEstado, setFiltroEstado] = useState<string>('activo');
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -51,25 +55,6 @@ export default function Animales() {
     }
   };
 
-  const handleEdit = (animal: Animal) => {
-    setSelectedAnimal(animal);
-    setIsModalOpen(true);
-  };
-
-  const handleDelete = async (animal: Animal) => {
-    if (!confirm(`¿Estás seguro de eliminar a ${animal.nombre || animal.numero_identificacion}?`)) {
-      return;
-    }
-
-    try {
-      await animalesService.deleteAnimal(animal.id);
-      loadAnimales();
-    } catch (error) {
-      console.error('Error deleting animal:', error);
-      alert('Error al eliminar el animal');
-    }
-  };
-
   const handleView = async (animal: Animal) => {
     try {
       const freshAnimal = await animalesService.getAnimal(animal.id);
@@ -81,16 +66,31 @@ export default function Animales() {
     setIsDetailsModalOpen(true);
   };
 
+  const handleEditFromDetails = () => {
+    setIsDetailsModalOpen(false);
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteFromDetails = async () => {
+    if (!selectedAnimal) return;
+    if (!confirm(`¿Eliminar a ${selectedAnimal.nombre || selectedAnimal.numero_identificacion}?`)) return;
+    try {
+      await animalesService.deleteAnimal(selectedAnimal.id);
+      setIsDetailsModalOpen(false);
+      setSelectedAnimal(null);
+      loadAnimales();
+    } catch (error) {
+      console.error('Error deleting animal:', error);
+      alert('Error al eliminar el animal');
+    }
+  };
+
   useEffect(() => {
     const animalIdParam = searchParams.get('animal_id');
-    if (!animalIdParam || loading) {
-      return;
-    }
+    if (!animalIdParam || loading) return;
 
     const animalId = Number(animalIdParam);
-    if (!Number.isFinite(animalId)) {
-      return;
-    }
+    if (!Number.isFinite(animalId)) return;
 
     const abrirDesdeAlerta = async () => {
       const enLista = animales.find((item) => item.id === animalId);
@@ -137,15 +137,10 @@ export default function Animales() {
     }
   };
 
-  const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return '-';
-    return new Date(dateStr).toLocaleDateString('es-CO');
-  };
-
   return (
     <AppShell
       title="Inventario de Animales"
-      subtitle="Consulta rapida y movimientos por lote"
+      subtitle="Toca una tarjeta para ver detalle, editar o registrar baja"
       userName={user?.nombre_completo}
       role={user?.rol}
       onLogout={logout}
@@ -188,106 +183,85 @@ export default function Animales() {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-2 md:grid-cols-3">
-          <input value={loteDestino} onChange={(e) => setLoteDestino(e.target.value)} placeholder="Lote destino" className="gd-input" />
-          <input
-            value={potreroDestino}
-            onChange={(e) => setPotreroDestino(e.target.value)}
-            placeholder="Potrero destino"
-            className="gd-input"
-          />
-          <button onClick={handleBulkMove} className="gd-btn-secondary">
-            Mover seleccionados ({selectedIds.length})
-          </button>
-        </div>
+        {filtroEstado === 'activo' ? (
+          <div className="mt-4 grid gap-2 md:grid-cols-3">
+            <input value={loteDestino} onChange={(e) => setLoteDestino(e.target.value)} placeholder="Lote destino" className="gd-input" />
+            <input
+              value={potreroDestino}
+              onChange={(e) => setPotreroDestino(e.target.value)}
+              placeholder="Potrero destino"
+              className="gd-input"
+            />
+            <button onClick={handleBulkMove} className="gd-btn-secondary">
+              Mover seleccionados ({selectedIds.length})
+            </button>
+          </div>
+        ) : null}
       </section>
 
       <section className="gd-card overflow-hidden">
-        {loading ? (
-          <div className="p-8 text-center text-sm font-semibold text-slate-600">Cargando animales...</div>
-        ) : animales.length === 0 ? (
-          <div className="p-10 text-center">
-            <Beef className="mx-auto h-12 w-12 text-brand-700" />
-            <p className="mt-2 font-semibold text-slate-700">No hay animales registrados.</p>
-            <p className="text-sm text-slate-500">Crea el primero para empezar el control de campo.</p>
+        <EntityCardGrid
+          loading={loading}
+          empty={!loading && animales.length === 0}
+          emptyMessage="No hay animales en este filtro."
+          emptyAction={
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedAnimal(null);
+                setIsModalOpen(true);
+              }}
+              className="font-semibold text-brand-600 hover:text-brand-800"
+            >
+              + Crear el primer animal
+            </button>
+          }
+        >
+          {animales.map((animal) => (
+            <AnimalCard
+              key={animal.id}
+              animal={animal}
+              selected={selectedIds.includes(animal.id)}
+              onSelectToggle={() => toggleSelected(animal.id)}
+              onClick={() => void handleView(animal)}
+            />
+          ))}
+        </EntityCardGrid>
+
+        {!loading && animales.length === 0 ? (
+          <div className="pb-8 text-center">
+            <Beef className="mx-auto h-10 w-10 text-brand-700 opacity-50" />
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Sel.</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Chapeta</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Nombre</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Sexo</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Raza</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Categoria</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">F. nacimiento</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Estado</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {animales.map((animal) => (
-                  <tr key={animal.id} className="hover:bg-brand-50/40">
-                    <td className="px-4 py-3">
-                      <input type="checkbox" checked={selectedIds.includes(animal.id)} onChange={() => toggleSelected(animal.id)} />
-                    </td>
-                    <td className="px-4 py-3 text-sm font-bold text-slate-900">{animal.numero_identificacion}</td>
-                    <td className="px-4 py-3 text-sm text-slate-700">{animal.nombre || '-'}</td>
-                    <td className="px-4 py-3 text-sm text-slate-600">{animal.sexo === 'macho' ? 'Macho' : 'Hembra'}</td>
-                    <td className="px-4 py-3 text-sm text-slate-600">{animal.raza}</td>
-                    <td className="px-4 py-3 text-sm text-slate-600">{animal.categoria || '-'}</td>
-                    <td className="px-4 py-3 text-sm text-slate-600">{formatDate(animal.fecha_nacimiento)}</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`gd-pill ${
-                          animal.estado === 'activo'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : animal.estado === 'vendido'
-                            ? 'bg-sky-100 text-sky-700'
-                            : animal.estado === 'muerto'
-                            ? 'bg-rose-100 text-rose-700'
-                            : 'bg-slate-100 text-slate-700'
-                        }`}
-                      >
-                        {animal.estado}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm">
-                      <button onClick={() => handleView(animal)} className="mr-3 font-semibold text-brand-700 hover:text-brand-900">
-                        Ver
-                      </button>
-                      <button onClick={() => handleEdit(animal)} className="mr-3 font-semibold text-sky-700 hover:text-sky-900">
-                        Editar
-                      </button>
-                      <button onClick={() => handleDelete(animal)} className="font-semibold text-rose-700 hover:text-rose-900">
-                        Eliminar
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        ) : null}
       </section>
 
-      {/* Modal Crear/Editar */}
       <AnimalModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onSave={() => {
-          loadAnimales();
-        }}
+        onSave={() => loadAnimales()}
         animal={selectedAnimal}
       />
 
-      {/* Modal Detalles */}
       <AnimalDetailsModal
         isOpen={isDetailsModalOpen}
         onClose={() => setIsDetailsModalOpen(false)}
         animal={selectedAnimal}
+        onEdit={handleEditFromDetails}
+        onDelete={handleDeleteFromDetails}
+        onRegistrarMuerte={() => {
+          setIsDetailsModalOpen(false);
+          setIsMuerteModalOpen(true);
+        }}
+      />
+
+      <RegistrarMuerteModal
+        isOpen={isMuerteModalOpen}
+        onClose={() => setIsMuerteModalOpen(false)}
+        animal={selectedAnimal}
+        onSuccess={() => {
+          loadAnimales();
+          window.dispatchEvent(new Event('gd-animales-updated'));
+        }}
       />
     </AppShell>
   );

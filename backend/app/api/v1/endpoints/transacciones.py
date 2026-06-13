@@ -25,8 +25,35 @@ from app.schemas.compra_animal import (
     CompraAnimalResponse
 )
 from app.services.rules_engine import en_retiro_sanitario
+from app.constants.rubro_venta import RUBRO_ANIMAL_SACRIFICIO, RUBRO_LECHE, resolver_rubro_venta
+from app.constants.rubro_afectacion import RUBRO_CEBA, RUBRO_GENERAL, RUBRO_LECHE as RUBRO_GASTO_LECHE
 
 router = APIRouter()
+
+
+def _es_venta_sacrificio(tipo: str, rubro_venta: str | None, animal_id: int | None) -> bool:
+    return tipo == "venta" and resolver_rubro_venta(tipo, rubro_venta, animal_id) == RUBRO_ANIMAL_SACRIFICIO
+
+
+def _aplicar_salida_animal_venta(
+    db: Session,
+    animal: Animal,
+    fecha_venta: date,
+    concepto: str,
+    finca_id: int,
+) -> None:
+    _validar_retiro_sanitario_venta(db, animal.id, finca_id, fecha_venta)
+    animal.estado = "vendido"
+    animal.fecha_salida = fecha_venta
+    animal.motivo_salida = f"Venta para sacrificio - {concepto}"
+    db.add(animal)
+
+
+def _revertir_salida_animal(animal: Animal) -> None:
+    if animal.estado == "vendido":
+        animal.estado = "activo"
+        animal.fecha_salida = None
+        animal.motivo_salida = None
 
 
 def _validar_retiro_sanitario_venta(db: Session, animal_id: int, finca_id: int, fecha_venta: date) -> None:
@@ -147,16 +174,11 @@ def crear_transaccion(
         ).first()
         if not animal:
             raise HTTPException(status_code=404, detail="Animal no encontrado")
-        
-        # Si es una VENTA, actualizar estado del animal a vendido
-        if transaccion_in.tipo == "venta":
-            _validar_retiro_sanitario_venta(db, animal.id, current_user.finca_id, transaccion_in.fecha)
-            animal.estado = "vendido"
-            animal.fecha_salida = transaccion_in.fecha
-            animal.motivo_salida = f"Venta - {transaccion_in.concepto}"
-            db.add(animal)
-        
-        # Si es una COMPRA, asegurarse que esté activo
+
+        if _es_venta_sacrificio(transaccion_in.tipo, transaccion_in.rubro_venta, transaccion_in.animal_id):
+            _aplicar_salida_animal_venta(
+                db, animal, transaccion_in.fecha, transaccion_in.concepto, current_user.finca_id
+            )
         elif transaccion_in.tipo == "compra":
             if animal.estado != "activo":
                 animal.estado = "activo"
@@ -167,8 +189,12 @@ def crear_transaccion(
     db_transaccion = Transaccion(
         **transaccion_in.model_dump(),
         finca_id=current_user.finca_id,
-        registrado_por=current_user.id
+        registrado_por=current_user.id,
     )
+    if db_transaccion.tipo == "venta" and not db_transaccion.rubro_venta:
+        db_transaccion.rubro_venta = resolver_rubro_venta(
+            db_transaccion.tipo, db_transaccion.rubro_venta, db_transaccion.animal_id
+        )
     
     db.add(db_transaccion)
     db.commit()
@@ -190,6 +216,7 @@ def listar_transacciones(
     fecha_desde: str | None = Query(None),
     fecha_hasta: str | None = Query(None),
     categoria_gasto: str | None = Query(None),
+    rubro_venta: str | None = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100)
 ) -> Any:
@@ -206,6 +233,8 @@ def listar_transacciones(
         query = query.filter(Transaccion.fecha <= fecha_hasta)
     if categoria_gasto:
         query = query.filter(Transaccion.categoria_gasto == categoria_gasto.lower())
+    if rubro_venta:
+        query = query.filter(Transaccion.rubro_venta == rubro_venta.lower())
     
     query = query.order_by(Transaccion.fecha.desc())
     total = query.count()
@@ -271,6 +300,38 @@ def obtener_resumen_financiero(
 
     gasto_por_categoria = {cat: float(total) for cat, total in gastos_por_cat}
 
+    ventas_leche = db.query(func.sum(Transaccion.monto)).filter(
+        Transaccion.finca_id == current_user.finca_id,
+        Transaccion.tipo == "venta",
+        Transaccion.rubro_venta == RUBRO_LECHE,
+    ).scalar() or 0.0
+
+    ventas_animales = db.query(func.sum(Transaccion.monto)).filter(
+        Transaccion.finca_id == current_user.finca_id,
+        Transaccion.tipo == "venta",
+        Transaccion.rubro_venta == RUBRO_ANIMAL_SACRIFICIO,
+    ).scalar() or 0.0
+
+    ventas_otros = float(total_ventas) - float(ventas_leche) - float(ventas_animales)
+
+    gastos_leche = db.query(func.sum(Transaccion.monto)).filter(
+        Transaccion.finca_id == current_user.finca_id,
+        Transaccion.tipo == "gasto",
+        Transaccion.rubro_afectacion == RUBRO_GASTO_LECHE,
+    ).scalar() or 0.0
+
+    gastos_ceba = db.query(func.sum(Transaccion.monto)).filter(
+        Transaccion.finca_id == current_user.finca_id,
+        Transaccion.tipo == "gasto",
+        Transaccion.rubro_afectacion == RUBRO_CEBA,
+    ).scalar() or 0.0
+
+    gastos_general = db.query(func.sum(Transaccion.monto)).filter(
+        Transaccion.finca_id == current_user.finca_id,
+        Transaccion.tipo == "gasto",
+        (Transaccion.rubro_afectacion == RUBRO_GENERAL) | (Transaccion.rubro_afectacion.is_(None)),
+    ).scalar() or 0.0
+
     return ResumenFinanciero(
         total_ventas=float(total_ventas),
         total_compras=float(total_compras),
@@ -278,7 +339,15 @@ def obtener_resumen_financiero(
         balance_neto=float(total_ventas - total_compras - total_gastos),
         ventas_mes_actual=float(ventas_mes),
         gastos_mes_actual=float(gastos_mes),
-        gasto_por_categoria=gasto_por_categoria
+        gasto_por_categoria=gasto_por_categoria,
+        ventas_leche=float(ventas_leche),
+        ventas_animales=float(ventas_animales),
+        ventas_otros=max(0.0, ventas_otros),
+        gastos_leche=float(gastos_leche),
+        gastos_ceba=float(gastos_ceba),
+        gastos_general=float(gastos_general),
+        margen_leche=float(ventas_leche) - float(gastos_leche),
+        margen_ceba=float(ventas_animales) - float(gastos_ceba),
     )
 
 
@@ -328,37 +397,37 @@ def actualizar_transaccion(
 
     old_tipo = trans.tipo
     old_animal_id = trans.animal_id
+    old_rubro = trans.rubro_venta
     update_data = transaccion_in.model_dump(exclude_unset=True)
 
     for field, value in update_data.items():
         setattr(trans, field, value)
 
+    if trans.tipo == "venta" and not trans.rubro_venta:
+        trans.rubro_venta = resolver_rubro_venta(trans.tipo, trans.rubro_venta, trans.animal_id)
+
     new_tipo = trans.tipo
     new_animal_id = trans.animal_id
+    new_rubro = trans.rubro_venta
 
-    if old_tipo == "venta" and old_animal_id and (old_tipo != new_tipo or old_animal_id != new_animal_id):
-        old_animal = db.query(Animal).filter(
-            Animal.id == old_animal_id,
-            Animal.finca_id == current_user.finca_id,
-        ).first()
-        if old_animal and old_animal.estado == "vendido":
-            old_animal.estado = "activo"
-            old_animal.fecha_salida = None
-            old_animal.motivo_salida = None
-            db.add(old_animal)
+    if _es_venta_sacrificio(old_tipo, old_rubro, old_animal_id) and old_animal_id:
+        if not _es_venta_sacrificio(new_tipo, new_rubro, new_animal_id) or old_animal_id != new_animal_id:
+            old_animal = db.query(Animal).filter(
+                Animal.id == old_animal_id,
+                Animal.finca_id == current_user.finca_id,
+            ).first()
+            if old_animal:
+                _revertir_salida_animal(old_animal)
+                db.add(old_animal)
 
-    if new_tipo == "venta" and new_animal_id:
+    if _es_venta_sacrificio(new_tipo, new_rubro, new_animal_id) and new_animal_id:
         animal = db.query(Animal).filter(
             Animal.id == new_animal_id,
             Animal.finca_id == current_user.finca_id,
         ).first()
         if not animal:
             raise HTTPException(status_code=404, detail="Animal no encontrado")
-        _validar_retiro_sanitario_venta(db, animal.id, current_user.finca_id, trans.fecha)
-        animal.estado = "vendido"
-        animal.fecha_salida = trans.fecha
-        animal.motivo_salida = f"Venta - {trans.concepto}"
-        db.add(animal)
+        _aplicar_salida_animal_venta(db, animal, trans.fecha, trans.concepto, current_user.finca_id)
     elif new_tipo == "compra" and new_animal_id:
         animal = db.query(Animal).filter(
             Animal.id == new_animal_id,
@@ -400,13 +469,11 @@ def eliminar_transaccion(
     if not trans:
         raise HTTPException(status_code=404, detail="Transacción no encontrada")
     
-    # Si era una VENTA con animal, revertir el estado del animal
-    if trans.tipo == "venta" and trans.animal_id:
+    # Si era venta de animal para sacrificio, revertir el estado del animal
+    if _es_venta_sacrificio(trans.tipo, trans.rubro_venta, trans.animal_id) and trans.animal_id:
         animal = db.query(Animal).filter(Animal.id == trans.animal_id).first()
-        if animal and animal.estado == "vendido":
-            animal.estado = "activo"
-            animal.fecha_salida = None
-            animal.motivo_salida = None
+        if animal:
+            _revertir_salida_animal(animal)
             db.add(animal)
     
     db.delete(trans)

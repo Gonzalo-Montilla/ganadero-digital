@@ -4,7 +4,7 @@ import { animalesService } from '../api/animales';
 import type { RegistroProduccion, RegistroProduccionCreate } from '../types/produccion';
 import type { Animal } from '../types/animal';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
-import { BarChart3, Milk, SquarePen, TrendingUp } from 'lucide-react';
+import { BarChart3, Milk, SquarePen } from 'lucide-react';
 
 interface Props {
   isOpen: boolean;
@@ -168,9 +168,7 @@ export default function ProduccionModal({ isOpen, onClose, onSave, registro }: P
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="leche">Leche</option>
-                <option value="carne">Carne</option>
-                <option value="lana">Lana</option>
+                <option value="leche">Leche (litros ordeñados)</option>
                 <option value="otro">Otro</option>
               </select>
             </div>
@@ -226,47 +224,6 @@ export default function ProduccionModal({ isOpen, onClose, onSave, registro }: P
                     <option value="tarde">Tarde</option>
                     <option value="noche">Noche</option>
                   </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Calidad
-                  </label>
-                  <select
-                    value={formData.calidad || ''}
-                    onChange={(e) => setFormData({ ...formData, calidad: e.target.value as any || null })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="">Sin especificar</option>
-                    <option value="alta">Alta</option>
-                    <option value="media">Media</option>
-                    <option value="baja">Baja</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Campos específicos para Carne */}
-          {formData.tipo_produccion === 'carne' && (
-            <div className="bg-red-50 p-4 rounded-lg space-y-4">
-              <h3 className="flex items-center gap-2 font-semibold text-red-900">
-                <TrendingUp className="h-4 w-4 text-brand-700" />
-                Producción Cárnica
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Peso en canal (kg)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={formData.peso_venta || ''}
-                    onChange={(e) => setFormData({ ...formData, peso_venta: e.target.value ? parseFloat(e.target.value) : null })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  />
                 </div>
 
                 <div>

@@ -9,25 +9,45 @@ import type { HojaVidaReproductiva } from '../types/hojaVida';
 import { formatAnimalResumen, labelTipoEventoReproductivo } from '../types/hojaVida';
 import { getMediaUrl } from '../utils/mediaUrl';
 import AuthenticatedImage from './AuthenticatedImage';
-import { Baby, Beef, ClipboardList, Download, HeartPulse, MapPin, Scale, ScrollText, Users } from 'lucide-react';
+import type { Pesaje } from '../types/pesaje';
+import { Beef, Baby, ClipboardList, Download, HeartPulse, MapPin, Pencil, Plus, Scale, ScrollText, Skull, Trash2, Users } from 'lucide-react';
 
 interface AnimalDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   animal: Animal | null;
+  onRegistrarMuerte?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }
 
-export default function AnimalDetailsModal({ isOpen, onClose, animal }: AnimalDetailsModalProps) {
+export default function AnimalDetailsModal({
+  isOpen,
+  onClose,
+  animal,
+  onRegistrarMuerte,
+  onEdit,
+  onDelete,
+}: AnimalDetailsModalProps) {
   const modalContentRef = useRef<HTMLDivElement>(null);
   const [historialSanitario, setHistorialSanitario] = useState<ControlSanitario[]>([]);
   const [loadingHistorial, setLoadingHistorial] = useState(false);
   const [hojaVidaReproductiva, setHojaVidaReproductiva] = useState<HojaVidaReproductiva | null>(null);
   const [loadingHojaVida, setLoadingHojaVida] = useState(false);
+  const [historialPesajes, setHistorialPesajes] = useState<Pesaje[]>([]);
+  const [loadingPesajes, setLoadingPesajes] = useState(false);
+  const [guardandoPesaje, setGuardandoPesaje] = useState(false);
+  const [nuevoPesaje, setNuevoPesaje] = useState({
+    fecha: new Date().toISOString().split('T')[0],
+    peso_kg: '',
+    observaciones: '',
+  });
 
   useEffect(() => {
     if (!isOpen || !animal) {
       setHistorialSanitario([]);
       setHojaVidaReproductiva(null);
+      setHistorialPesajes([]);
       return;
     }
 
@@ -64,12 +84,80 @@ export default function AnimalDetailsModal({ isOpen, onClose, animal }: AnimalDe
       }
     };
 
+    const cargarPesajesLocal = async () => {
+      try {
+        setLoadingPesajes(true);
+        const items = await animalesService.getPesajes(animal.id);
+        if (!cancelado) {
+          setHistorialPesajes(items);
+        }
+      } catch (error) {
+        console.error('Error cargando historial de pesajes:', error);
+      } finally {
+        if (!cancelado) {
+          setLoadingPesajes(false);
+        }
+      }
+    };
+
     void cargarHistorial();
     void cargarHojaVidaReproductiva();
+    void cargarPesajesLocal();
     return () => {
       cancelado = true;
     };
   }, [isOpen, animal?.id]);
+
+  const cargarPesajes = async () => {
+    if (!animal) return;
+    try {
+      setLoadingPesajes(true);
+      const items = await animalesService.getPesajes(animal.id);
+      setHistorialPesajes(items);
+    } catch (error) {
+      console.error('Error cargando historial de pesajes:', error);
+    } finally {
+      setLoadingPesajes(false);
+    }
+  };
+
+  const handleRegistrarPesaje = async () => {
+    if (!animal) return;
+    const peso = parseFloat(nuevoPesaje.peso_kg);
+    if (!nuevoPesaje.fecha || !peso || peso <= 0) {
+      alert('Indica fecha y peso válido');
+      return;
+    }
+    try {
+      setGuardandoPesaje(true);
+      const fechaPesaje = nuevoPesaje.fecha;
+      await animalesService.registrarPesaje(animal.id, {
+        fecha: fechaPesaje,
+        peso_kg: peso,
+        observaciones: nuevoPesaje.observaciones || null,
+      });
+      setNuevoPesaje({
+        fecha: new Date().toISOString().split('T')[0],
+        peso_kg: '',
+        observaciones: '',
+      });
+      await cargarPesajes();
+      animal.peso_actual = peso;
+      animal.ultima_fecha_pesaje = fechaPesaje;
+    } catch (error) {
+      console.error('Error registrando pesaje:', error);
+      alert('No se pudo registrar el pesaje');
+    } finally {
+      setGuardandoPesaje(false);
+    }
+  };
+
+  const listoFaena =
+    animal &&
+    animal.estado === 'activo' &&
+    animal.proposito !== 'leche' &&
+    animal.peso_actual != null &&
+    animal.peso_actual >= (animal.categoria?.match(/novilla|vaquillona|ternera/i) ? 380 : 420);
   
   if (!isOpen || !animal) return null;
 
@@ -150,7 +238,7 @@ export default function AnimalDetailsModal({ isOpen, onClose, animal }: AnimalDe
           ) : null}
 
           {/* Estado Badge */}
-          <div className="mb-6">
+          <div className="mb-6 flex flex-wrap items-center gap-2">
             <span
               className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
                 animal.estado === 'activo'
@@ -162,7 +250,26 @@ export default function AnimalDetailsModal({ isOpen, onClose, animal }: AnimalDe
             >
               {animal.estado.toUpperCase()}
             </span>
+            {listoFaena ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-900">
+                <Beef className="h-4 w-4" />
+                Listo para faena
+              </span>
+            ) : null}
+            {animal.estado === 'muerto' && animal.fecha_salida ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-3 py-1 text-sm font-semibold text-rose-800">
+                <Skull className="h-4 w-4" />
+                Muerte: {formatDate(animal.fecha_salida)}
+              </span>
+            ) : null}
           </div>
+
+          {animal.estado === 'muerto' && animal.motivo_salida ? (
+            <div className="mb-6 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
+              <p className="font-semibold">Causa registrada</p>
+              <p className="mt-1">{animal.motivo_salida}</p>
+            </div>
+          ) : null}
 
           {/* Información en Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
@@ -249,6 +356,82 @@ export default function AnimalDetailsModal({ isOpen, onClose, animal }: AnimalDe
                 )}
               </div>
             </dl>
+          </div>
+
+          {/* Historial de pesajes */}
+          <div className="mt-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              <span className="inline-flex items-center gap-2">
+                <Scale className="h-5 w-5 text-brand-700" />
+                Historial de pesajes
+              </span>
+            </h3>
+            {animal.estado === 'activo' && (
+              <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50/50 p-4">
+                <p className="text-sm font-medium text-emerald-900 mb-3">Registrar nuevo pesaje</p>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                  <input
+                    type="date"
+                    value={nuevoPesaje.fecha}
+                    onChange={(e) => setNuevoPesaje({ ...nuevoPesaje, fecha: e.target.value })}
+                    className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  />
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.1"
+                    placeholder="Peso (kg)"
+                    value={nuevoPesaje.peso_kg}
+                    onChange={(e) => setNuevoPesaje({ ...nuevoPesaje, peso_kg: e.target.value })}
+                    className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Observaciones (opcional)"
+                    value={nuevoPesaje.observaciones}
+                    onChange={(e) => setNuevoPesaje({ ...nuevoPesaje, observaciones: e.target.value })}
+                    className="rounded-md border border-gray-300 px-3 py-2 text-sm md:col-span-2"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleRegistrarPesaje()}
+                  disabled={guardandoPesaje}
+                  className="mt-3 inline-flex items-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
+                >
+                  <Plus className="h-4 w-4" />
+                  {guardandoPesaje ? 'Guardando...' : 'Guardar pesaje'}
+                </button>
+              </div>
+            )}
+            {loadingPesajes ? (
+              <p className="text-sm text-gray-500">Cargando historial...</p>
+            ) : historialPesajes.length === 0 ? (
+              <p className="rounded-lg bg-gray-50 p-4 text-sm text-gray-600">
+                Sin pesajes registrados. Usa el formulario para llevar control de engorde.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-left text-gray-500">
+                      <th className="py-2 pr-4">Fecha</th>
+                      <th className="py-2 pr-4">Peso</th>
+                      <th className="py-2">Observaciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historialPesajes.map((pesaje) => (
+                      <tr key={pesaje.id} className="border-b border-gray-100">
+                        <td className="py-2 pr-4">{formatDate(pesaje.fecha)}</td>
+                        <td className="py-2 pr-4 font-semibold">{pesaje.peso_kg} kg</td>
+                        <td className="py-2 text-gray-600">{pesaje.observaciones || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {/* Genealogía */}
@@ -466,20 +649,39 @@ export default function AnimalDetailsModal({ isOpen, onClose, animal }: AnimalDe
           </div>
 
           {/* Botones */}
-          <div className="mt-6 flex justify-end gap-3">
-            <button
-              onClick={handleDownloadPDF}
-              className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
-            >
-              <Download className="h-4 w-4" />
-              Descargar PDF
-            </button>
-            <button
-              onClick={onClose}
-              className="px-6 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
-            >
-              Cerrar
-            </button>
+          <div className="gd-detail-footer">
+            <div className="gd-detail-footer-actions">
+              <div className="gd-detail-footer-group">
+                {onEdit ? (
+                  <button type="button" onClick={onEdit} className="gd-btn-primary !py-2.5">
+                    <Pencil className="h-4 w-4" />
+                    Editar
+                  </button>
+                ) : null}
+                <button type="button" onClick={handleDownloadPDF} className="gd-btn-secondary !py-2.5">
+                  <Download className="h-4 w-4" />
+                  Descargar PDF
+                </button>
+              </div>
+
+              <div className="gd-detail-footer-group">
+                {animal.estado === 'activo' && onRegistrarMuerte ? (
+                  <button type="button" onClick={onRegistrarMuerte} className="gd-btn-danger !py-2.5">
+                    <Skull className="h-4 w-4" />
+                    Registrar muerte
+                  </button>
+                ) : null}
+                {onDelete ? (
+                  <button type="button" onClick={onDelete} className="gd-btn-danger-outline !py-2.5">
+                    <Trash2 className="h-4 w-4" />
+                    Eliminar
+                  </button>
+                ) : null}
+                <button type="button" onClick={onClose} className="gd-btn-neutral !py-2.5">
+                  Cerrar
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

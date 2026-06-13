@@ -49,6 +49,10 @@ def init_db():
     import_all_models()
     Base.metadata.create_all(bind=engine)
 
+    from app.db.migrate_schema import run_migrations
+
+    run_migrations()
+
     # Seed opcional y explícito para demos/local.
     # Nunca se ejecuta por defecto para evitar credenciales inseguras en runtime.
     if os.getenv("ENABLE_BOOTSTRAP_SEED", "").lower() == "true":

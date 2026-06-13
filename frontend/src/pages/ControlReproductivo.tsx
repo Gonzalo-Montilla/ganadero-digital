@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { reproductivosService } from '../api/reproductivos';
 import ControlReproductivoModal from '../components/ControlReproductivoModal';
+import ReproductivoDetailsModal from '../components/ReproductivoDetailsModal';
+import ReproductivoCard from '../components/cards/ReproductivoCard';
+import EntityCardGrid from '../components/cards/EntityCardGrid';
 import type { ControlReproductivo, PartoPrefill } from '../types/reproductivo';
 import {
   puedeRegistrarPartoDesdeDiagnostico,
@@ -9,11 +12,13 @@ import {
 } from '../utils/gestacion';
 import { useAuth } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
+import { useAnimalPhotos } from '../hooks/useAnimalPhotos';
 
 export default function ControlReproductivoPage() {
   const { user, logout } = useAuth();
   const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
   const [searchParams, setSearchParams] = useSearchParams();
+  const { photos: animalPhotos } = useAnimalPhotos();
   const [controles, setControles] = useState<ControlReproductivo[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -25,6 +30,7 @@ export default function ControlReproductivoPage() {
   
   // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [selectedControl, setSelectedControl] = useState<ControlReproductivo | null>(null);
   const [partoPrefill, setPartoPrefill] = useState<PartoPrefill | null>(null);
   const [accionProcesada, setAccionProcesada] = useState(false);
@@ -115,6 +121,17 @@ export default function ControlReproductivoPage() {
     setIsModalOpen(true);
   };
 
+  const openDetails = (control: ControlReproductivo) => {
+    setSelectedControl(control);
+    setIsDetailsOpen(true);
+  };
+
+  const openEdit = () => {
+    setPartoPrefill(null);
+    setIsDetailsOpen(false);
+    setIsModalOpen(true);
+  };
+
   const closeModal = () => {
     setIsModalOpen(false);
     setSelectedControl(null);
@@ -175,12 +192,6 @@ export default function ControlReproductivoPage() {
     setIsModalOpen(true);
   };
 
-  const handleEditar = (control: ControlReproductivo) => {
-    setPartoPrefill(null);
-    setSelectedControl(control);
-    setIsModalOpen(true);
-  };
-
   const handleEliminar = async (control: ControlReproductivo) => {
     const extra =
       control.tipo_evento === 'parto'
@@ -190,6 +201,8 @@ export default function ControlReproductivoPage() {
 
     try {
       await reproductivosService.deleteControlReproductivo(control.id);
+      setIsDetailsOpen(false);
+      setSelectedControl(null);
       loadControles();
       window.dispatchEvent(new CustomEvent('gd-reproductivo-updated'));
     } catch (error) {
@@ -202,43 +215,6 @@ export default function ControlReproductivoPage() {
     loadControles();
   };
 
-  const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return '-';
-    return new Date(dateStr).toLocaleDateString('es-CO');
-  };
-
-  const getTipoIcon = (tipo: string) => {
-    switch (tipo) {
-      case 'servicio': return 'Servicio';
-      case 'diagnostico': return 'Diagnóstico';
-      case 'parto': return 'Parto';
-      case 'aborto': return 'Aborto';
-      case 'secado': return 'Secado';
-      default: return 'Otro';
-    }
-  };
-
-  const getTipoColor = (tipo: string) => {
-    switch (tipo) {
-      case 'servicio': return 'bg-blue-100 text-blue-800';
-      case 'diagnostico': return 'bg-purple-100 text-purple-800';
-      case 'parto': return 'bg-green-100 text-green-800';
-      case 'aborto': return 'bg-red-100 text-red-800';
-      case 'secado': return 'bg-gray-100 text-gray-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getDiagnosticoColor = (diagnostico: string | null) => {
-    switch (diagnostico) {
-      case 'prenada': return 'text-green-600 font-semibold';
-      case 'vacia': return 'text-red-600';
-      case 'dudosa': return 'text-yellow-600';
-      default: return 'text-gray-400';
-    }
-  };
-
-  // Filtrar localmente por animal
   const controlesFiltrados = controles.filter((c) => {
     if (filtroAnimalId != null && c.animal_id !== filtroAnimalId) {
       return false;
@@ -312,131 +288,45 @@ export default function ControlReproductivoPage() {
           </div>
         </div>
 
-        {/* Tabla */}
+        {/* Tarjetas */}
         <div className="gd-card overflow-hidden">
-          {loading ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600 mx-auto"></div>
-              <p className="mt-4 text-slate-600">Cargando registros...</p>
-            </div>
-          ) : controlesFiltrados.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-slate-500 text-lg">No hay registros reproductivos</p>
-              <button
-                onClick={handleNuevo}
-                className="mt-4 text-brand-600 hover:text-brand-700 font-semibold"
-              >
+          <EntityCardGrid
+            loading={loading}
+            empty={!loading && controlesFiltrados.length === 0}
+            emptyMessage="No hay registros reproductivos"
+            emptyAction={
+              <button type="button" onClick={handleNuevo} className="font-semibold text-brand-600">
                 + Crear el primer registro
               </button>
-            </div>
-          ) : (
-            <>
-              <div className="space-y-3 p-3 md:hidden">
-                {controlesFiltrados.map((control) => (
-                  <article key={control.id} className="rounded-xl border border-slate-200 bg-white p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-bold text-slate-900">{control.animal_numero || `ID: ${control.animal_id}`}</p>
-                        <p className="text-xs text-slate-500">{formatDate(control.fecha_evento)}</p>
-                      </div>
-                      <span className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold ${getTipoColor(control.tipo_evento)}`}>
-                        {getTipoIcon(control.tipo_evento)}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-xs text-slate-600">
-                      {control.tipo_evento === 'servicio' ? (control.tipo_servicio || 'Servicio') : ''}
-                      {control.tipo_evento === 'parto' && control.numero_crias ? `${control.numero_crias} cría(s)` : ''}
-                    </p>
-                    <p className={`mt-1 text-xs ${getDiagnosticoColor(control.diagnostico)}`}>
-                      {control.diagnostico ? control.diagnostico.toUpperCase() : 'SIN DIAGNÓSTICO'}
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {puedeRegistrarParto(control) && (
-                        <button
-                          onClick={() => handleRegistrarParto(control)}
-                          className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
-                        >
-                          Registrar parto
-                        </button>
-                      )}
-                      <button onClick={() => handleEditar(control)} className="gd-btn-secondary !px-3 !py-2 text-xs">Editar</button>
-                      <button onClick={() => handleEliminar(control)} className="rounded-xl border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50">Eliminar</button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-
-              <div className="hidden overflow-x-auto md:block">
-                <table className="min-w-full divide-y divide-slate-200">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Fecha</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Hembra</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Tipo</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Detalles</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Diagnóstico</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Veterinario</th>
-                      <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-slate-200">
-                    {controlesFiltrados.map((control) => (
-                      <tr key={control.id} className="hover:bg-brand-50/30">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{formatDate(control.fecha_evento)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <div className="font-medium text-slate-900">{control.animal_numero || `ID: ${control.animal_id}`}</div>
-                          {control.animal_nombre && <div className="text-slate-500">{control.animal_nombre}</div>}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTipoColor(control.tipo_evento)}`}>
-                            {getTipoIcon(control.tipo_evento)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-slate-900">
-                          {control.tipo_evento === 'servicio' && (
-                            <div className="text-xs">
-                              {control.tipo_servicio && <div>{control.tipo_servicio.replace('_', ' ')}</div>}
-                              {control.toro_numero && <div>Toro: {control.toro_numero}</div>}
-                              {control.toro_pajuela && <div>{control.toro_pajuela}</div>}
-                            </div>
-                          )}
-                          {control.tipo_evento === 'parto' && (
-                            <div className="text-xs">
-                              {control.numero_crias && <div>{control.numero_crias} cría(s)</div>}
-                              {control.sexo_cria && <div>{control.sexo_cria}</div>}
-                              {control.peso_cria && <div>{control.peso_cria} kg</div>}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <span className={getDiagnosticoColor(control.diagnostico)}>
-                            {control.diagnostico ? control.diagnostico.toUpperCase() : '-'}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{control.veterinario || '-'}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          {puedeRegistrarParto(control) && (
-                            <button
-                              onClick={() => handleRegistrarParto(control)}
-                              className="mr-3 text-emerald-700 hover:text-emerald-900 font-semibold"
-                            >
-                              Registrar parto
-                            </button>
-                          )}
-                          <button onClick={() => handleEditar(control)} className="text-sky-600 hover:text-sky-800 mr-3">Editar</button>
-                          <button onClick={() => handleEliminar(control)} className="text-red-600 hover:text-red-900">Eliminar</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
+            }
+          >
+            {controlesFiltrados.map((control) => (
+              <ReproductivoCard
+                key={control.id}
+                control={control}
+                animalFotoUrl={animalPhotos.get(control.animal_id)?.foto_url}
+                highlightParto={puedeRegistrarParto(control)}
+                onClick={() => openDetails(control)}
+              />
+            ))}
+          </EntityCardGrid>
         </div>
       </div>
 
-      {/* Modal */}
+      <ReproductivoDetailsModal
+        isOpen={isDetailsOpen}
+        onClose={() => setIsDetailsOpen(false)}
+        control={selectedControl}
+        animalFotoUrl={selectedControl ? animalPhotos.get(selectedControl.animal_id)?.foto_url : null}
+        puedeParto={selectedControl ? puedeRegistrarParto(selectedControl) : false}
+        onRegistrarParto={() => {
+          if (!selectedControl) return;
+          setIsDetailsOpen(false);
+          void handleRegistrarParto(selectedControl);
+        }}
+        onEdit={openEdit}
+        onDelete={() => selectedControl && void handleEliminar(selectedControl)}
+      />
       <ControlReproductivoModal
         isOpen={isModalOpen}
         onClose={closeModal}

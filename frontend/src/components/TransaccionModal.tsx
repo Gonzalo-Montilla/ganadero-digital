@@ -1,10 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import { transaccionesService } from '../api/transacciones';
 import { animalesService } from '../api/animales';
+import AnimalPhotoPicker from './AnimalPhotoPicker';
 import type { Transaccion, TransaccionCreate } from '../types/transaccion';
 import type { Animal } from '../types/animal';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
-import { Coins, HandCoins, ReceiptText, ShoppingCart, SquarePen, Wallet } from 'lucide-react';
+import { Coins, HandCoins, Milk, ReceiptText, ShoppingCart, SquarePen, Wallet } from 'lucide-react';
+import type { RubroVenta } from '../constants/rubroVenta';
+import { RUBRO_VENTA_HINTS, RUBRO_VENTA_LABELS } from '../constants/rubroVenta';
+import type { RubroAfectacion } from '../constants/rubroAfectacion';
+import { RUBRO_AFECTACION_HINTS, RUBRO_AFECTACION_LABELS } from '../constants/rubroAfectacion';
 
 interface Props {
   isOpen: boolean;
@@ -19,6 +24,7 @@ export default function TransaccionModal({ isOpen, onClose, onSave, transaccion 
   const initialFocusRef = useRef<HTMLSelectElement>(null);
   const [animales, setAnimales] = useState<Animal[]>([]);
   const [loading, setLoading] = useState(false);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
 
   // Datos diferentes para cada tipo
   const [formData, setFormData] = useState<TransaccionCreate>({
@@ -34,7 +40,11 @@ export default function TransaccionModal({ isOpen, onClose, onSave, transaccion 
     documento_tercero: null,
     metodo_pago: null,
     categoria_gasto: null,
+    rubro_afectacion: 'general',
     observaciones: null,
+    rubro_venta: 'animal_sacrificio',
+    cantidad_litros: null,
+    precio_por_litro: null,
   });
 
   // Datos del animal nuevo (solo para compra)
@@ -68,7 +78,11 @@ export default function TransaccionModal({ isOpen, onClose, onSave, transaccion 
           documento_tercero: transaccion.documento_tercero || null,
           metodo_pago: transaccion.metodo_pago || null,
           categoria_gasto: transaccion.categoria_gasto || null,
+          rubro_afectacion: transaccion.rubro_afectacion || 'general',
           observaciones: transaccion.observaciones || null,
+          rubro_venta: transaccion.rubro_venta || 'animal_sacrificio',
+          cantidad_litros: transaccion.cantidad_litros || null,
+          precio_por_litro: transaccion.precio_por_litro || null,
         });
       } else {
         resetForm();
@@ -87,6 +101,22 @@ export default function TransaccionModal({ isOpen, onClose, onSave, transaccion 
     }
   };
 
+  const resetAnimalCompra = () => {
+    setAnimalData({
+      numero_identificacion: '',
+      nombre: '',
+      sexo: 'hembra',
+      raza: '',
+      fecha_nacimiento: '',
+      peso_actual: 0,
+      categoria: '',
+      proposito: '',
+      color: '',
+      observaciones: '',
+    });
+    setPhotoFile(null);
+  };
+
   const resetForm = () => {
     setFormData({
       tipo: 'venta',
@@ -101,8 +131,50 @@ export default function TransaccionModal({ isOpen, onClose, onSave, transaccion 
       documento_tercero: null,
       metodo_pago: null,
       categoria_gasto: null,
+      rubro_afectacion: 'general',
       observaciones: null,
+      rubro_venta: 'animal_sacrificio',
+      cantidad_litros: null,
+      precio_por_litro: null,
     });
+    resetAnimalCompra();
+  };
+
+  const normalizePayload = (payload: TransaccionCreate): TransaccionCreate => {
+    const next = { ...payload };
+    if (next.tipo === 'venta' && !next.rubro_venta) {
+      next.rubro_venta = next.animal_id ? 'animal_sacrificio' : 'otro';
+    }
+    if (next.tipo !== 'venta') {
+      next.rubro_venta = null;
+      next.cantidad_litros = null;
+      next.precio_por_litro = null;
+    }
+    if (next.tipo === 'gasto' && !next.rubro_afectacion) {
+      next.rubro_afectacion = 'general';
+    }
+    if (next.tipo !== 'gasto') {
+      next.rubro_afectacion = null;
+    }
+    return next;
+  };
+
+  const rubroVenta = (formData.rubro_venta || 'animal_sacrificio') as RubroVenta;
+
+  const handleRubroChange = (rubro: RubroVenta) => {
+    setFormData((prev) => ({
+      ...prev,
+      rubro_venta: rubro,
+      animal_id: rubro === 'leche' ? null : prev.animal_id,
+      cantidad_litros: rubro === 'leche' ? prev.cantidad_litros : null,
+      precio_por_litro: rubro === 'leche' ? prev.precio_por_litro : null,
+    }));
+  };
+
+  const syncMontoLeche = (litros: number | null | undefined, precio: number | null | undefined) => {
+    if (litros && precio && litros > 0 && precio > 0) {
+      setFormData((prev) => ({ ...prev, monto: Math.round(litros * precio * 100) / 100 }));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -120,10 +192,19 @@ export default function TransaccionModal({ isOpen, onClose, onSave, transaccion 
         return;
       }
     } else {
-      // Para venta y gasto, validar campos normales
       if (!formData.concepto || formData.monto <= 0) {
         alert('Completa los campos obligatorios');
         return;
+      }
+      if (formData.tipo === 'venta') {
+        if (rubroVenta === 'animal_sacrificio' && !formData.animal_id) {
+          alert('Selecciona el animal que vendes para sacrificio/faena');
+          return;
+        }
+        if (rubroVenta === 'leche' && formData.animal_id) {
+          alert('La venta de leche no debe vincularse a un animal del inventario');
+          return;
+        }
       }
     }
 
@@ -131,11 +212,9 @@ export default function TransaccionModal({ isOpen, onClose, onSave, transaccion 
       setLoading(true);
       
       if (transaccion) {
-        // Editando transacción existente
-        await transaccionesService.updateTransaccion(transaccion.id, formData);
+        await transaccionesService.updateTransaccion(transaccion.id, normalizePayload(formData));
       } else if (formData.tipo === 'compra') {
-        // Nueva compra de animal - usar endpoint especial
-        await transaccionesService.comprarAnimal({
+        const result = await transaccionesService.comprarAnimal({
           animal: {
             numero_identificacion: animalData.numero_identificacion,
             nombre: animalData.nombre || undefined,
@@ -160,9 +239,17 @@ export default function TransaccionModal({ isOpen, onClose, onSave, transaccion 
             observaciones: formData.observaciones || undefined,
           },
         });
+
+        if (photoFile && result.animal_id) {
+          try {
+            await animalesService.uploadFoto(result.animal_id, photoFile);
+          } catch (photoError) {
+            console.error('Error subiendo foto del animal comprado:', photoError);
+            alert('Compra registrada, pero la foto no se pudo subir. Puedes agregarla desde Inventario.');
+          }
+        }
       } else {
-        // Venta o gasto normal
-        await transaccionesService.createTransaccion(formData);
+        await transaccionesService.createTransaccion(normalizePayload(formData));
       }
       
       onSave();
@@ -221,7 +308,20 @@ export default function TransaccionModal({ isOpen, onClose, onSave, transaccion 
               <select
                 ref={initialFocusRef}
                 value={formData.tipo}
-                onChange={(e) => setFormData({ ...formData, tipo: e.target.value as any })}
+                onChange={(e) => {
+                  const tipo = e.target.value as TransaccionCreate['tipo'];
+                  setFormData({
+                    ...formData,
+                    tipo,
+                    rubro_venta: tipo === 'venta' ? 'animal_sacrificio' : null,
+                    animal_id: tipo === 'venta' ? formData.animal_id : null,
+                    cantidad_litros: null,
+                    precio_por_litro: null,
+                  });
+                  if (tipo !== 'compra') {
+                    setPhotoFile(null);
+                  }
+                }}
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500"
               >
@@ -258,7 +358,13 @@ export default function TransaccionModal({ isOpen, onClose, onSave, transaccion 
                   value={formData.concepto}
                   onChange={(e) => setFormData({ ...formData, concepto: e.target.value })}
                   required
-                  placeholder="Ej: Venta de novillo, Gasto de veterinario..."
+                  placeholder={
+                    formData.tipo === 'venta' && rubroVenta === 'leche'
+                      ? 'Ej: Venta leche quincena 1 - cooperativa'
+                      : formData.tipo === 'venta' && rubroVenta === 'animal_sacrificio'
+                        ? 'Ej: Venta novillo para faena'
+                        : 'Ej: Venta novillo, Gasto de veterinario...'
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500"
                 />
               </div>
@@ -280,12 +386,86 @@ export default function TransaccionModal({ isOpen, onClose, onSave, transaccion 
             </div>
           </div>
 
-          {/* VENTA: Selector de animal existente */}
+          {/* Rubro de venta */}
           {formData.tipo === 'venta' && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-4 space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Rubro de ingreso *</label>
+                <select
+                  value={rubroVenta}
+                  onChange={(e) => handleRubroChange(e.target.value as RubroVenta)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500"
+                >
+                  {(Object.keys(RUBRO_VENTA_LABELS) as RubroVenta[]).map((key) => (
+                    <option key={key} value={key}>{RUBRO_VENTA_LABELS[key]}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-emerald-900">{RUBRO_VENTA_HINTS[rubroVenta]}</p>
+              </div>
+            </div>
+          )}
+
+          {/* VENTA DE LECHE */}
+          {formData.tipo === 'venta' && rubroVenta === 'leche' && (
+            <div className="bg-sky-50 p-4 rounded-lg space-y-4">
+              <h3 className="flex items-center gap-2 font-semibold text-sky-900">
+                <Milk className="h-4 w-4 text-brand-700" />
+                Venta de leche
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Litros vendidos</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={formData.cantidad_litros || ''}
+                    onChange={(e) => {
+                      const litros = e.target.value ? parseFloat(e.target.value) : null;
+                      setFormData({ ...formData, cantidad_litros: litros });
+                      syncMontoLeche(litros, formData.precio_por_litro);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Precio por litro ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={formData.precio_por_litro || ''}
+                    onChange={(e) => {
+                      const precio = e.target.value ? parseFloat(e.target.value) : null;
+                      setFormData({ ...formData, precio_por_litro: precio });
+                      syncMontoLeche(formData.cantidad_litros, precio);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cliente / comprador</label>
+                  <input
+                    type="text"
+                    value={formData.tercero || ''}
+                    onChange={(e) => setFormData({ ...formData, tercero: e.target.value || null })}
+                    placeholder="Cooperativa, planta..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-sky-800">
+                Los litros ordeñados se registran en Producción. Aquí va el ingreso recibido por la venta.
+              </p>
+            </div>
+          )}
+
+          {/* VENTA: Animal para sacrificio */}
+          {formData.tipo === 'venta' && rubroVenta === 'animal_sacrificio' && (
             <div className="bg-green-50 p-4 rounded-lg space-y-4">
               <h3 className="flex items-center gap-2 font-semibold text-green-900">
                 <HandCoins className="h-4 w-4 text-brand-700" />
-                Animal a Vender
+                Animal para sacrificio / faena
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
@@ -432,6 +612,8 @@ export default function TransaccionModal({ isOpen, onClose, onSave, transaccion 
                 </div>
               </div>
 
+              <AnimalPhotoPicker file={photoFile} onChange={setPhotoFile} />
+
               <h3 className="mt-4 flex items-center gap-2 font-semibold text-blue-900">
                 <Coins className="h-4 w-4 text-brand-700" />
                 Detalles de la Compra
@@ -493,23 +675,49 @@ export default function TransaccionModal({ isOpen, onClose, onSave, transaccion 
 
           {/* Categoría de Gasto */}
           {formData.tipo === 'gasto' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Categoría de Gasto
-              </label>
-              <select
-                value={formData.categoria_gasto || ''}
-                onChange={(e) => setFormData({ ...formData, categoria_gasto: e.target.value || null })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500"
-              >
-                <option value="">Sin categoría</option>
-                <option value="sanidad">Sanidad</option>
-                <option value="alimentacion">Alimentación</option>
-                <option value="infraestructura">Infraestructura</option>
-                <option value="personal">Personal</option>
-                <option value="otro">Otro</option>
-              </select>
-            </div>
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Categoría de Gasto
+                </label>
+                <select
+                  value={formData.categoria_gasto || ''}
+                  onChange={(e) => setFormData({ ...formData, categoria_gasto: e.target.value || null })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500"
+                >
+                  <option value="">Sin categoría</option>
+                  <option value="sanidad">Sanidad</option>
+                  <option value="alimentacion">Alimentación</option>
+                  <option value="infraestructura">Infraestructura</option>
+                  <option value="personal">Personal</option>
+                  <option value="otro">Otro</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Rubro al que afecta
+                </label>
+                <select
+                  value={formData.rubro_afectacion || 'general'}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      rubro_afectacion: (e.target.value || 'general') as RubroAfectacion,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500"
+                >
+                  {(Object.keys(RUBRO_AFECTACION_LABELS) as RubroAfectacion[]).map((key) => (
+                    <option key={key} value={key}>
+                      {RUBRO_AFECTACION_LABELS[key]}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-gray-500">
+                  {RUBRO_AFECTACION_HINTS[(formData.rubro_afectacion || 'general') as RubroAfectacion]}
+                </p>
+              </div>
+            </>
           )}
 
           {/* Tercero */}

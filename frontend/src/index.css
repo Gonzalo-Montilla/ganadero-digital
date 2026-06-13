@@ -30,11 +30,35 @@ body {
   }
 
   .gd-btn-primary {
-    @apply inline-flex items-center justify-center rounded-xl px-4 py-3 text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 active:scale-[0.99] transition;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 active:scale-[0.99] transition;
   }
 
   .gd-btn-secondary {
     @apply inline-flex items-center justify-center rounded-xl px-4 py-3 text-sm font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 transition;
+  }
+
+  .gd-btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 active:scale-[0.99] transition shadow-sm;
+  }
+
+  .gd-btn-danger-outline {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-rose-700 bg-white border border-rose-200 hover:bg-rose-50 active:scale-[0.99] transition;
+  }
+
+  .gd-btn-neutral {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 active:scale-[0.99] transition;
+  }
+
+  .gd-detail-footer {
+    @apply -mx-6 -mb-6 mt-6 border-t border-slate-200 bg-gradient-to-b from-slate-50 to-white px-6 py-4;
+  }
+
+  .gd-detail-footer-actions {
+    @apply flex flex-wrap items-center justify-between gap-3;
+  }
+
+  .gd-detail-footer-group {
+    @apply flex flex-wrap items-center gap-2;
   }
 
   .gd-input {

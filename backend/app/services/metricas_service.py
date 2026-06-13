@@ -11,14 +11,18 @@ from sqlalchemy.orm import Session
 
 from app.models.animal import Animal
 from app.models.control_reproductivo import ControlReproductivo
+from app.constants.rubro_venta import RUBRO_ANIMAL_SACRIFICIO, RUBRO_LECHE
+from app.constants.rubro_afectacion import RUBRO_CEBA, RUBRO_GENERAL, RUBRO_LECHE as RUBRO_GASTO_LECHE
 from app.models.registro_produccion import RegistroProduccion
 from app.models.transaccion import Transaccion
 from app.schemas.metricas import (
     DistribucionItem,
     MetricasGraficas,
+    PuntoConciliacionLeche,
     PuntoFinanzas,
     PuntoProduccion,
     PuntoReproductivo,
+    ResumenMargenRubro,
 )
 
 MESES_ES = ("Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic")
@@ -84,33 +88,78 @@ def _inventario_estados(db: Session, finca_id: int) -> list[DistribucionItem]:
     return [DistribucionItem(nombre=k, valor=v) for k, v in sorted(conteo.items(), key=lambda x: -x[1])]
 
 
-def _series_finanzas(db: Session, finca_id: int, meses: int, hoy: date) -> list[PuntoFinanzas]:
+def _empty_finanza_bucket() -> dict[str, float]:
+    return {
+        "ventas": 0.0,
+        "ventas_leche": 0.0,
+        "ventas_animales": 0.0,
+        "ventas_otros": 0.0,
+        "gastos": 0.0,
+        "gastos_leche": 0.0,
+        "gastos_ceba": 0.0,
+        "gastos_general": 0.0,
+        "compras": 0.0,
+        "litros_vendidos": 0.0,
+        "ingreso_leche": 0.0,
+    }
+
+
+def _finanzas_acumulado(db: Session, finca_id: int, meses: int, hoy: date) -> dict[str, dict[str, float]]:
+    buckets = list(_iter_month_buckets(meses, hoy))
+    if not buckets:
+        return {}
+    desde = buckets[0][2]
+    transacciones = (
+        db.query(
+            Transaccion.fecha,
+            Transaccion.tipo,
+            Transaccion.monto,
+            Transaccion.rubro_venta,
+            Transaccion.rubro_afectacion,
+            Transaccion.cantidad_litros,
+        )
+        .filter(Transaccion.finca_id == finca_id, Transaccion.fecha >= desde)
+        .all()
+    )
+    acumulado: dict[str, dict[str, float]] = defaultdict(_empty_finanza_bucket)
+    for fecha, tipo, monto, rubro, rubro_gasto, cantidad_litros in transacciones:
+        if not fecha:
+            continue
+        mes_key = f"{fecha.year:04d}-{fecha.month:02d}"
+        valor = float(monto or 0)
+        if tipo == "venta":
+            acumulado[mes_key]["ventas"] += valor
+            if rubro == RUBRO_LECHE:
+                acumulado[mes_key]["ventas_leche"] += valor
+                acumulado[mes_key]["ingreso_leche"] += valor
+                if cantidad_litros:
+                    acumulado[mes_key]["litros_vendidos"] += float(cantidad_litros)
+            elif rubro == RUBRO_ANIMAL_SACRIFICIO:
+                acumulado[mes_key]["ventas_animales"] += valor
+            else:
+                acumulado[mes_key]["ventas_otros"] += valor
+        elif tipo == "gasto":
+            acumulado[mes_key]["gastos"] += valor
+            rubro_g = (rubro_gasto or RUBRO_GENERAL).lower()
+            if rubro_g == RUBRO_GASTO_LECHE:
+                acumulado[mes_key]["gastos_leche"] += valor
+            elif rubro_g == RUBRO_CEBA:
+                acumulado[mes_key]["gastos_ceba"] += valor
+            else:
+                acumulado[mes_key]["gastos_general"] += valor
+        elif tipo == "compra":
+            acumulado[mes_key]["compras"] += valor
+    return acumulado
+
+
+def _series_finanzas(acumulado: dict[str, dict[str, float]], meses: int, hoy: date) -> list[PuntoFinanzas]:
     buckets = list(_iter_month_buckets(meses, hoy))
     if not buckets:
         return []
 
-    desde = buckets[0][2]
-    transacciones = (
-        db.query(Transaccion.fecha, Transaccion.tipo, Transaccion.monto)
-        .filter(Transaccion.finca_id == finca_id, Transaccion.fecha >= desde)
-        .all()
-    )
-
-    acumulado: dict[str, dict[str, float]] = defaultdict(lambda: {"ventas": 0.0, "gastos": 0.0, "compras": 0.0})
-    for fecha, tipo, monto in transacciones:
-        if not fecha:
-            continue
-        mes_key = f"{fecha.year:04d}-{fecha.month:02d}"
-        if tipo == "venta":
-            acumulado[mes_key]["ventas"] += float(monto or 0)
-        elif tipo == "gasto":
-            acumulado[mes_key]["gastos"] += float(monto or 0)
-        elif tipo == "compra":
-            acumulado[mes_key]["compras"] += float(monto or 0)
-
     puntos: list[PuntoFinanzas] = []
     for etiqueta, mes_key, _, _ in buckets:
-        data = acumulado[mes_key]
+        data = acumulado.get(mes_key, _empty_finanza_bucket())
         ventas = round(data["ventas"], 2)
         gastos = round(data["gastos"], 2)
         compras = round(data["compras"], 2)
@@ -119,12 +168,79 @@ def _series_finanzas(db: Session, finca_id: int, meses: int, hoy: date) -> list[
                 etiqueta=etiqueta,
                 mes=mes_key,
                 ventas=ventas,
+                ventas_leche=round(data["ventas_leche"], 2),
+                ventas_animales=round(data["ventas_animales"], 2),
+                ventas_otros=round(data["ventas_otros"], 2),
                 gastos=gastos,
                 compras=compras,
                 balance=round(ventas - gastos - compras, 2),
             )
         )
     return puntos
+
+
+def _series_conciliacion_leche(
+    db: Session,
+    finca_id: int,
+    meses: int,
+    hoy: date,
+    finanzas_acum: dict[str, dict[str, float]],
+) -> list[PuntoConciliacionLeche]:
+    buckets = list(_iter_month_buckets(meses, hoy))
+    if not buckets:
+        return []
+
+    desde = buckets[0][2]
+    registros = (
+        db.query(RegistroProduccion.fecha, RegistroProduccion.cantidad_litros)
+        .filter(
+            RegistroProduccion.finca_id == finca_id,
+            RegistroProduccion.tipo_produccion == "leche",
+            RegistroProduccion.fecha >= desde,
+        )
+        .all()
+    )
+
+    ordeñados_por_mes: dict[str, float] = defaultdict(float)
+    for fecha, litros in registros:
+        if not fecha:
+            continue
+        mes_key = f"{fecha.year:04d}-{fecha.month:02d}"
+        ordeñados_por_mes[mes_key] += float(litros or 0)
+
+    puntos: list[PuntoConciliacionLeche] = []
+    for etiqueta, mes_key, _, _ in buckets:
+        fin = finanzas_acum.get(mes_key, _empty_finanza_bucket())
+        ordeñados = round(ordeñados_por_mes[mes_key], 2)
+        vendidos = round(fin["litros_vendidos"], 2)
+        puntos.append(
+            PuntoConciliacionLeche(
+                etiqueta=etiqueta,
+                mes=mes_key,
+                litros_ordeñados=ordeñados,
+                litros_vendidos=vendidos,
+                diferencia=round(ordeñados - vendidos, 2),
+                ingreso_leche=round(fin["ingreso_leche"], 2),
+            )
+        )
+    return puntos
+
+
+def _resumen_margen_rubros(finanzas_acum: dict[str, dict[str, float]]) -> ResumenMargenRubro:
+    ingresos_leche = sum(v["ventas_leche"] for v in finanzas_acum.values())
+    ingresos_ceba = sum(v["ventas_animales"] for v in finanzas_acum.values())
+    gastos_leche = sum(v["gastos_leche"] for v in finanzas_acum.values())
+    gastos_ceba = sum(v["gastos_ceba"] for v in finanzas_acum.values())
+    gastos_general = sum(v["gastos_general"] for v in finanzas_acum.values())
+    return ResumenMargenRubro(
+        ingresos_leche=round(ingresos_leche, 2),
+        gastos_leche=round(gastos_leche, 2),
+        margen_leche=round(ingresos_leche - gastos_leche, 2),
+        ingresos_ceba=round(ingresos_ceba, 2),
+        gastos_ceba=round(gastos_ceba, 2),
+        margen_ceba=round(ingresos_ceba - gastos_ceba, 2),
+        gastos_general=round(gastos_general, 2),
+    )
 
 
 def _series_produccion(db: Session, finca_id: int, meses: int, hoy: date) -> list[PuntoProduccion]:
@@ -206,12 +322,15 @@ def obtener_metricas_graficas(
 ) -> MetricasGraficas:
     hoy = hoy or date.today()
     meses = max(3, min(meses, 12))
+    finanzas_acum = _finanzas_acumulado(db, finca_id, meses, hoy)
 
     return MetricasGraficas(
         meses=meses,
         inventario_categorias=_inventario_categorias(db, finca_id),
         inventario_estados=_inventario_estados(db, finca_id),
-        finanzas=_series_finanzas(db, finca_id, meses, hoy),
+        finanzas=_series_finanzas(finanzas_acum, meses, hoy),
         produccion=_series_produccion(db, finca_id, meses, hoy),
         reproductivo=_series_reproductivo(db, finca_id, meses, hoy),
+        conciliacion_leche=_series_conciliacion_leche(db, finca_id, meses, hoy, finanzas_acum),
+        margen_rubros=_resumen_margen_rubros(finanzas_acum),
     )

@@ -1,13 +1,18 @@
 import { useState, useEffect } from 'react';
 import { produccionService } from '../api/produccion';
 import ProduccionModal from '../components/ProduccionModal';
+import ProduccionDetailsModal from '../components/ProduccionDetailsModal';
+import ProduccionCard from '../components/cards/ProduccionCard';
+import EntityCardGrid from '../components/cards/EntityCardGrid';
 import type { RegistroProduccion } from '../types/produccion';
 import { useAuth } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
+import { useAnimalPhotos } from '../hooks/useAnimalPhotos';
 
 export default function ProduccionPage() {
   const { user, logout } = useAuth();
   const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+  const { photos: animalPhotos } = useAnimalPhotos();
   const [registros, setRegistros] = useState<RegistroProduccion[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -18,6 +23,7 @@ export default function ProduccionPage() {
   
   // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [selectedRegistro, setSelectedRegistro] = useState<RegistroProduccion | null>(null);
 
   // Estadísticas
@@ -77,8 +83,13 @@ export default function ProduccionPage() {
     setIsModalOpen(true);
   };
 
-  const handleEditar = (registro: RegistroProduccion) => {
+  const openDetails = (registro: RegistroProduccion) => {
     setSelectedRegistro(registro);
+    setIsDetailsOpen(true);
+  };
+
+  const openEdit = () => {
+    setIsDetailsOpen(false);
     setIsModalOpen(true);
   };
 
@@ -87,6 +98,8 @@ export default function ProduccionPage() {
 
     try {
       await produccionService.deleteRegistro(id);
+      setIsDetailsOpen(false);
+      setSelectedRegistro(null);
       loadRegistros();
     } catch (error) {
       console.error('Error eliminando registro:', error);
@@ -96,28 +109,6 @@ export default function ProduccionPage() {
 
   const handleModalSave = () => {
     loadRegistros();
-  };
-
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('es-CO');
-  };
-
-  const getTipoIcon = (tipo: string) => {
-    switch (tipo) {
-      case 'leche': return 'Leche';
-      case 'carne': return 'Carne';
-      case 'lana': return 'Lana';
-      default: return 'Otro';
-    }
-  };
-
-  const getTipoColor = (tipo: string) => {
-    switch (tipo) {
-      case 'leche': return 'bg-blue-100 text-blue-800';
-      case 'carne': return 'bg-red-100 text-red-800';
-      case 'lana': return 'bg-purple-100 text-purple-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
   };
 
   // Filtrar localmente por animal
@@ -131,7 +122,7 @@ export default function ProduccionPage() {
   return (
     <AppShell
       title="Registros de Produccion"
-      subtitle="Leche, carne y rendimiento"
+      subtitle="Litros ordeñados (operación). El dinero por leche o venta de animales va en Finanzas."
       userName={user?.nombre_completo}
       role={user?.rol}
       onLogout={logout}
@@ -143,6 +134,10 @@ export default function ProduccionPage() {
       }
     >
       <div className="max-w-7xl mx-auto">
+        <div className="mb-6 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+          <strong>Producción</strong> registra litros ordeñados por vaca.{' '}
+          <strong>Finanzas → Venta</strong> registra ingresos: venta de leche (las vacas siguen en inventario) o venta de animal para sacrificio/faena (sale del inventario).
+        </div>
         {/* Estadísticas */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <div className="gd-card p-6">
@@ -204,111 +199,38 @@ export default function ProduccionPage() {
           </div>
         </div>
 
-        {/* Tabla */}
+        {/* Tarjetas */}
         <div className="gd-card overflow-hidden">
-          {loading ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600 mx-auto"></div>
-              <p className="mt-4 text-slate-600">Cargando registros...</p>
-            </div>
-          ) : registrosFiltrados.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-slate-500 text-lg">No hay registros de producción</p>
-              <button
-                onClick={handleNuevo}
-                className="mt-4 text-brand-600 hover:text-brand-700 font-semibold"
-              >
+          <EntityCardGrid
+            loading={loading}
+            empty={!loading && registrosFiltrados.length === 0}
+            emptyMessage="No hay registros de producción"
+            emptyAction={
+              <button type="button" onClick={handleNuevo} className="font-semibold text-brand-600">
                 + Crear el primer registro
               </button>
-            </div>
-          ) : (
-            <>
-              <div className="space-y-3 p-3 md:hidden">
-                {registrosFiltrados.map((registro) => (
-                  <article key={registro.id} className="rounded-xl border border-slate-200 bg-white p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-bold text-slate-900">{registro.animal_numero || `ID: ${registro.animal_id}`}</p>
-                        <p className="text-xs text-slate-500">{formatDate(registro.fecha)}</p>
-                      </div>
-                      <span className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold ${getTipoColor(registro.tipo_produccion)}`}>
-                        {getTipoIcon(registro.tipo_produccion)}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-sm text-slate-700">
-                      {registro.tipo_produccion === 'leche' && registro.cantidad_litros ? `${registro.cantidad_litros} L` : ''}
-                      {registro.tipo_produccion === 'carne' && registro.peso_venta ? `${registro.peso_venta} kg` : ''}
-                    </p>
-                    {registro.turno ? <p className="text-xs text-slate-500">Turno: {registro.turno}</p> : null}
-                    {registro.calidad ? <p className="text-xs text-slate-500">Calidad: {registro.calidad}</p> : null}
-                    <div className="mt-3 flex gap-2">
-                      <button onClick={() => handleEditar(registro)} className="gd-btn-secondary !px-3 !py-2 text-xs">Editar</button>
-                      <button onClick={() => handleEliminar(registro.id)} className="rounded-xl border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50">Eliminar</button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-
-              <div className="hidden overflow-x-auto md:block">
-                <table className="min-w-full divide-y divide-slate-200">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Fecha</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Animal</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Tipo</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Cantidad</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Detalles</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Calidad</th>
-                      <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-slate-200">
-                    {registrosFiltrados.map((registro) => (
-                      <tr key={registro.id} className="hover:bg-brand-50/30">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{formatDate(registro.fecha)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <div className="font-medium text-slate-900">{registro.animal_numero || `ID: ${registro.animal_id}`}</div>
-                          {registro.animal_nombre && <div className="text-slate-500">{registro.animal_nombre}</div>}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTipoColor(registro.tipo_produccion)}`}>
-                            {getTipoIcon(registro.tipo_produccion)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {registro.tipo_produccion === 'leche' && registro.cantidad_litros && <span className="font-semibold text-blue-600">{registro.cantidad_litros} L</span>}
-                          {registro.tipo_produccion === 'carne' && registro.peso_venta && <span className="font-semibold text-red-600">{registro.peso_venta} kg</span>}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-slate-600">
-                          {registro.turno && <div>Turno: {registro.turno}</div>}
-                          {registro.observaciones && <div className="text-xs text-slate-500 truncate max-w-xs">{registro.observaciones}</div>}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          {registro.calidad && (
-                            <span className={`capitalize ${
-                              registro.calidad === 'alta' ? 'text-green-600 font-semibold' :
-                              registro.calidad === 'media' ? 'text-yellow-600' :
-                              'text-red-600'
-                            }`}>
-                              {registro.calidad}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          <button onClick={() => handleEditar(registro)} className="text-sky-600 hover:text-sky-800 mr-3">Editar</button>
-                          <button onClick={() => handleEliminar(registro.id)} className="text-red-600 hover:text-red-900">Eliminar</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
+            }
+          >
+            {registrosFiltrados.map((registro) => (
+              <ProduccionCard
+                key={registro.id}
+                registro={registro}
+                animalFotoUrl={animalPhotos.get(registro.animal_id)?.foto_url}
+                onClick={() => openDetails(registro)}
+              />
+            ))}
+          </EntityCardGrid>
         </div>
       </div>
 
-      {/* Modal */}
+      <ProduccionDetailsModal
+        isOpen={isDetailsOpen}
+        onClose={() => setIsDetailsOpen(false)}
+        registro={selectedRegistro}
+        animalFotoUrl={selectedRegistro ? animalPhotos.get(selectedRegistro.animal_id)?.foto_url : null}
+        onEdit={openEdit}
+        onDelete={() => selectedRegistro && void handleEliminar(selectedRegistro.id)}
+      />
       <ProduccionModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}

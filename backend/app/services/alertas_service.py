@@ -38,6 +38,8 @@ from app.services.gestacion_service import (
 
 )
 
+from app.services.pesaje_service import listar_candidatos_faena, peso_objetivo_faena
+
 from app.services.rules_engine import en_retiro_sanitario
 
 
@@ -441,6 +443,40 @@ def obtener_alertas_finca(db: Session, finca_id: int, hoy: date | None = None) -
                 mensaje="Animal en periodo de retiro sanitario activo (venta/ordeno restringido)",
 
                 fecha_limite=ultimo.fecha,
+
+            )
+
+        )
+
+
+
+    for animal in listar_candidatos_faena(db, finca_id):
+
+        objetivo = peso_objetivo_faena(animal)
+
+        alertas.append(
+
+            AlertaGanadera(
+
+                tipo="listo_faena",
+
+                prioridad="media",
+
+                animal_id=animal.id,
+
+                animal_numero=animal.numero_identificacion,
+
+                animal_nombre=animal.nombre,
+
+                mensaje=(
+
+                    f"Animal listo para faena: {animal.peso_actual:.0f} kg "
+
+                    f"(objetivo {objetivo:.0f} kg)"
+
+                ),
+
+                fecha_limite=animal.ultima_fecha_pesaje,
 
             )
 

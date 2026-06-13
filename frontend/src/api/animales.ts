@@ -2,6 +2,7 @@ import apiClient from './client';
 
 import type { OfflineQueuedResponse } from '../types';
 import type { Animal, AnimalCreate, AnimalUpdate, AnimalesListResponse } from '../types/animal';
+import type { AnimalFaenaCandidato, Pesaje, PesajeCreate } from '../types/pesaje';
 import type { HojaVidaReproductiva } from '../types/hojaVida';
 import { enqueuePhoto } from '../offline/photoQueue';
 
@@ -185,6 +186,49 @@ export const animalesService = {
       potrero_destino: potreroDestino || null,
 
     });
+
+    return response.data;
+
+  },
+
+
+
+  getPesajes: async (animalId: number): Promise<Pesaje[]> => {
+
+    const response = await apiClient.get(`/animales/${animalId}/pesajes`);
+
+    return response.data;
+
+  },
+
+
+
+  registrarPesaje: async (animalId: number, data: PesajeCreate): Promise<Pesaje> => {
+
+    const response = await apiClient.post(`/animales/${animalId}/pesajes`, data);
+
+    return response.data;
+
+  },
+
+
+
+  getCandidatosFaena: async (): Promise<AnimalFaenaCandidato[]> => {
+
+    const response = await apiClient.get('/animales/candidatos-faena');
+
+    return response.data;
+
+  },
+
+
+
+  registrarMuerte: async (
+    animalId: number,
+    data: { fecha: string; motivo: string; observaciones?: string | null },
+  ): Promise<{ mensaje: string }> => {
+
+    const response = await apiClient.post(`/animales/${animalId}/baja-muerte`, data);
 
     return response.data;
 

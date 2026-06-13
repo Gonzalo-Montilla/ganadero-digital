@@ -5,9 +5,11 @@ import Footer from '../components/Footer';
 import { metricasService, type MetricasGraficas } from '../api/metricas';
 import {
   ChartCard,
+  ConciliacionLecheChart,
   FinanzasChart,
   InventarioCategoriasChart,
   InventarioEstadosChart,
+  MargenRubrosPanel,
   ProduccionChart,
   ReproductivoChart,
 } from '../components/metricas/MetricasCharts';
@@ -118,6 +120,53 @@ export default function Metricas() {
               </ChartCard>
               <ChartCard title="Producción de leche" subtitle={`Litros totales por mes (${data.meses} meses)`}>
                 <ProduccionChart data={data.produccion} />
+              </ChartCard>
+            </section>
+
+            <section className="grid gap-5 xl:grid-cols-2">
+              <ChartCard
+                title="Conciliación de leche"
+                subtitle="Litros ordeñados (Producción) vs litros vendidos (Finanzas)"
+              >
+                <ConciliacionLecheChart data={data.conciliacion_leche} />
+                {data.conciliacion_leche.some((p) => p.litros_ordeñados > 0 || p.litros_vendidos > 0) && (
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="min-w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-left text-slate-500">
+                          <th className="py-2 pr-3">Mes</th>
+                          <th className="py-2 pr-3">Ordeñados</th>
+                          <th className="py-2 pr-3">Vendidos</th>
+                          <th className="py-2 pr-3">Diferencia</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.conciliacion_leche.map((row) => (
+                          <tr key={row.mes} className="border-b border-slate-100">
+                            <td className="py-2 pr-3 font-medium text-slate-800">{row.etiqueta}</td>
+                            <td className="py-2 pr-3 tabular-nums">{row.litros_ordeñados.toLocaleString('es-CO')} L</td>
+                            <td className="py-2 pr-3 tabular-nums">{row.litros_vendidos.toLocaleString('es-CO')} L</td>
+                            <td
+                              className={`py-2 pr-3 tabular-nums font-semibold ${
+                                row.diferencia === 0
+                                  ? 'text-slate-600'
+                                  : row.diferencia > 0
+                                  ? 'text-amber-700'
+                                  : 'text-red-600'
+                              }`}
+                            >
+                              {row.diferencia > 0 ? '+' : ''}
+                              {row.diferencia.toLocaleString('es-CO')} L
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </ChartCard>
+              <ChartCard title="Margen por rubro" subtitle={`Ingresos menos gastos asignados (${data.meses} meses)`}>
+                <MargenRubrosPanel data={data.margen_rubros} />
               </ChartCard>
             </section>
 

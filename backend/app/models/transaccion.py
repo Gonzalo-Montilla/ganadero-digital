@@ -30,6 +30,11 @@ class Transaccion(BaseModel):
     numero_animales = Column(Integer)
     peso_total = Column(Float)
     precio_por_kg = Column(Float)
+
+    # Rubro de venta (solo tipo=venta): animal_sacrificio, leche, otro
+    rubro_venta = Column(String(50), index=True)
+    cantidad_litros = Column(Float)
+    precio_por_litro = Column(Float)
     
     # Información del tercero
     tercero = Column(String(200))  # Cliente o proveedor
@@ -40,6 +45,9 @@ class Transaccion(BaseModel):
     
     # Categoría de gasto
     categoria_gasto = Column(String(100))  # sanidad, alimentacion, infraestructura, personal, otro
+
+    # Rubro al que afecta el gasto (solo tipo=gasto): leche, ceba, general
+    rubro_afectacion = Column(String(50), index=True)
     
     # Observaciones
     observaciones = Column(Text)

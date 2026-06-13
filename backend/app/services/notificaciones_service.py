@@ -20,6 +20,7 @@ TIPO_LABELS = {
     "parto": "Parto proximo",
     "dias_abiertos": "Dias abiertos",
     "retiro_sanitario": "Retiro sanitario",
+    "listo_faena": "Listo para faena",
 }
 
 

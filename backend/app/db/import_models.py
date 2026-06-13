@@ -9,6 +9,7 @@ def import_all_models() -> None:
     import app.models.control_reproductivo  # noqa: F401
     import app.models.control_sanitario  # noqa: F401
     import app.models.finca  # noqa: F401
+    import app.models.historial_pesaje  # noqa: F401
     import app.models.registro_produccion  # noqa: F401
     import app.models.transaccion  # noqa: F401
     import app.models.usuario  # noqa: F401
