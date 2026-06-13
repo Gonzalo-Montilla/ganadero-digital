@@ -1,6 +1,8 @@
 """
 Punto de entrada de FastAPI
 """
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
@@ -31,8 +33,10 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup():
-    # En producción se recomienda ejecutar solo migraciones.
-    if settings.ENVIRONMENT.lower() != "production":
+    # En producción real usar migraciones; en demo/staging crear tablas + seed.
+    env = settings.ENVIRONMENT.lower()
+    bootstrap = os.getenv("ENABLE_BOOTSTRAP_SEED", "").lower() == "true"
+    if env != "production" or bootstrap:
         init_db()
     iniciar_scheduler()
 

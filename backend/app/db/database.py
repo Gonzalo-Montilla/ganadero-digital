@@ -44,6 +44,9 @@ def init_db():
     Inicializar base de datos para entornos locales.
     En producción se deben usar migraciones (Alembic).
     """
+    from app.db.import_models import import_all_models
+
+    import_all_models()
     Base.metadata.create_all(bind=engine)
 
     # Seed opcional y explícito para demos/local.

@@ -1,6 +1,8 @@
 """
 Endpoints de autenticación
 """
+import os
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -26,6 +28,32 @@ from app.schemas.auth import (
 from app.schemas.usuario import UsuarioResponse
 
 router = APIRouter()
+
+DEMO_EMAIL = "admin@example.com"
+DEMO_PASSWORD = "ChangeMe123!"
+
+
+@router.get("/seed-demo")
+def seed_demo(db: Session = Depends(get_db)):
+    """
+    Crea usuario demo si ENABLE_BOOTSTRAP_SEED=true (solo entornos de prueba).
+    Abrir en el navegador una vez si el login demo no funciona.
+    """
+    if os.getenv("ENABLE_BOOTSTRAP_SEED", "").lower() != "true":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Seed demo deshabilitado en este entorno",
+        )
+    from app.db.seed import seed_initial_data
+
+    seed_initial_data(db)
+    db.commit()
+    return {
+        "ok": True,
+        "email": DEMO_EMAIL,
+        "password": DEMO_PASSWORD,
+        "message": "Usuario demo listo. Use estas credenciales en el login.",
+    }
 
 
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
