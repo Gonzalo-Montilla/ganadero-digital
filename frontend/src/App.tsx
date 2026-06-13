@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import AlertasGate from './components/AlertasGate';
+import RouteErrorBoundary from './components/RouteErrorBoundary';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Metricas from './pages/Metricas';
@@ -64,6 +65,7 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <AlertasGate>
+        <RouteErrorBoundary>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route
@@ -133,6 +135,7 @@ function App() {
           <Route path="/" element={<Navigate to="/dashboard" />} />
           <Route path="*" element={<Navigate to="/dashboard" />} />
         </Routes>
+        </RouteErrorBoundary>
         </AlertasGate>
       </AuthProvider>
     </BrowserRouter>

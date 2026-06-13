@@ -177,12 +177,13 @@ export function ReproductivoChart({ data }: { data: PuntoReproductivo[] }) {
 }
 
 export function ConciliacionLecheChart({ data }: { data: PuntoConciliacionLeche[] }) {
-  const hasData = data.some((p) => p.litros_ordeñados > 0 || p.litros_vendidos > 0);
+  const rows = data ?? [];
+  const hasData = rows.some((p) => p.litros_ordeñados > 0 || p.litros_vendidos > 0);
   if (!hasData) {
     return <EmptyChart message="Sin datos de leche para conciliar en este periodo." />;
   }
 
-  const chartData = data.map((p) => ({
+  const chartData = rows.map((p) => ({
     ...p,
     litros_ordeñados: p.litros_ordeñados,
   }));
@@ -241,12 +242,22 @@ function MargenCard({
 }
 
 export function MargenRubrosPanel({ data }: { data: ResumenMargenRubro }) {
+  const resumen = data ?? {
+    ingresos_leche: 0,
+    gastos_leche: 0,
+    margen_leche: 0,
+    ingresos_ceba: 0,
+    gastos_ceba: 0,
+    margen_ceba: 0,
+    gastos_general: 0,
+  };
+
   const hasData =
-    data.ingresos_leche > 0 ||
-    data.ingresos_ceba > 0 ||
-    data.gastos_leche > 0 ||
-    data.gastos_ceba > 0 ||
-    data.gastos_general > 0;
+    resumen.ingresos_leche > 0 ||
+    resumen.ingresos_ceba > 0 ||
+    resumen.gastos_leche > 0 ||
+    resumen.gastos_ceba > 0 ||
+    resumen.gastos_general > 0;
 
   if (!hasData) {
     return <EmptyChart message="Registra ventas y gastos con rubro para ver márgenes." />;
@@ -256,21 +267,21 @@ export function MargenRubrosPanel({ data }: { data: ResumenMargenRubro }) {
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <MargenCard
         titulo="Rubro leche"
-        ingresos={data.ingresos_leche}
-        gastos={data.gastos_leche}
-        margen={data.margen_leche}
-        color={data.margen_leche >= 0 ? 'text-sky-700' : 'text-red-600'}
+        ingresos={resumen.ingresos_leche}
+        gastos={resumen.gastos_leche}
+        margen={resumen.margen_leche}
+        color={resumen.margen_leche >= 0 ? 'text-sky-700' : 'text-red-600'}
       />
       <MargenCard
         titulo="Rubro ceba / faena"
-        ingresos={data.ingresos_ceba}
-        gastos={data.gastos_ceba}
-        margen={data.margen_ceba}
-        color={data.margen_ceba >= 0 ? 'text-emerald-700' : 'text-red-600'}
+        ingresos={resumen.ingresos_ceba}
+        gastos={resumen.gastos_ceba}
+        margen={resumen.margen_ceba}
+        color={resumen.margen_ceba >= 0 ? 'text-emerald-700' : 'text-red-600'}
       />
       <div className="rounded-xl border border-slate-200 bg-white p-4 sm:col-span-2 lg:col-span-1">
         <p className="text-sm font-semibold text-slate-800">Gastos generales</p>
-        <p className="mt-3 text-lg font-bold tabular-nums text-slate-900">{formatCOP(data.gastos_general)}</p>
+        <p className="mt-3 text-lg font-bold tabular-nums text-slate-900">{formatCOP(resumen.gastos_general)}</p>
         <p className="text-xs text-slate-500">No asignados a un rubro específico</p>
       </div>
     </div>
