@@ -12,9 +12,12 @@ Entorno **desechable** para que el cliente pruebe. **No afecta** el deploy real 
 | **backend** | `backend/` | API FastAPI |
 | **frontend** | `frontend/` | React / PWA |
 
----
+### Build falla con Node 18 o EBUSY en `node_modules/.cache`
 
-## Paso 0 — Subir el código a GitHub (si aún no está)
+- El frontend requiere **Node 20+** (ver `nixpacks.toml` y `.node-version`).
+- No uses `npm ci` en `railway.json`; Railway construye con `npm install && npm run build` vía Nixpacks.
+
+---
 
 En PowerShell, desde la carpeta del proyecto:
 
@@ -176,6 +179,7 @@ Así **nada de la demo contamina producción**.
 | Error CORS en consola | `BACKEND_CORS_ORIGINS` = URL exacta del frontend, redeploy backend |
 | Backend crash al iniciar | Logs Railway; `DATABASE_URL` y `SECRET_KEY` definidos |
 | 502 / no carga | Servicio aún building; revisa créditos Railway |
+| Build frontend EBUSY / Node 18 | Push con `nixpacks.toml` + `.node-version`; redeploy frontend |
 | Login falla | `ENABLE_BOOTSTRAP_SEED=true` y `ENVIRONMENT=staging`; redeploy backend |
 
 ---
