@@ -180,7 +180,8 @@ Así **nada de la demo contamina producción**.
 | Backend crash al iniciar | Logs Railway; `DATABASE_URL` y `SECRET_KEY` definidos |
 | 502 / no carga | Servicio aún building; revisa créditos Railway |
 | Build frontend EBUSY / Node 18 | Push con `nixpacks.toml` + `.node-version`; redeploy frontend |
-| «Email o contraseña incorrectos» pero el seed dijo LISTO | Las credenciales **sí funcionan** en la API. Prueba en `https://TU-BACKEND/docs` → POST `/auth/login`. Si ahí entra, el problema es `VITE_API_URL` o CORS en el frontend. |
+| Login falla / CORS | Backend: `ENVIRONMENT=staging` (permite `*.up.railway.app`). Frontend: `VITE_API_URL` = URL **exacta** del backend (copiar de Networking, incluye sufijo tipo `-1754`). |
+| URL backend incorrecta | Abre `https://TU-FRONTEND/config.js` — debe mostrar la misma URL que `/health` del backend. |
 | Resetear usuario demo | Abre `https://TU-BACKEND/api/v1/auth/seed-demo` (requiere `ENABLE_BOOTSTRAP_SEED=true`) |
 
 ---

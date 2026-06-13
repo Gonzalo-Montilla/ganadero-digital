@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { getApiUrl } from '../config/apiUrl';
 import BrandMark from '../components/BrandMark';
 
 export default function Login() {
@@ -24,7 +25,7 @@ export default function Login() {
       navigate('/dashboard');
     } catch (err: any) {
       if (!err.response) {
-        setError('No se pudo conectar con el servidor. Revise la URL del backend (VITE_API_URL).');
+        setError(`No se pudo conectar con el servidor (${getApiUrl()}). Revise VITE_API_URL en Railway.`);
       } else {
         setError(err.response?.data?.detail || 'Error al iniciar sesión');
       }

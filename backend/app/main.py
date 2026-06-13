@@ -19,16 +19,26 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# CORS
-_cors_origins = settings.cors_origins
-_allow_credentials = "*" not in _cors_origins
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors_origins if _allow_credentials else ["*"],
-    allow_credentials=_allow_credentials,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS — en staging/demo permitir cualquier subdominio Railway
+_env = settings.ENVIRONMENT.lower()
+if _env == "staging":
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"https://.*\.up\.railway\.app",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    _cors_origins = settings.cors_origins
+    _allow_credentials = "*" not in _cors_origins
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins if _allow_credentials else ["*"],
+        allow_credentials=_allow_credentials,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 @app.on_event("startup")
