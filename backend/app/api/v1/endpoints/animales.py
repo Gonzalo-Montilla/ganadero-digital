@@ -16,6 +16,8 @@ from app.schemas.animal import (
     AnimalResponse,
     AnimalListResponse
 )
+from app.schemas.hoja_vida import HojaVidaReproductivaResponse
+from app.services.animal_hoja_vida_service import build_hoja_vida_reproductiva
 
 router = APIRouter()
 
@@ -366,3 +368,26 @@ def get_genealogia(
                 genealogia["abuelos_paternos"]["padre"] = AnimalResponse.model_validate(abuelo_paterno)
 
     return genealogia
+
+
+@router.get("/{animal_id}/hoja-vida-reproductiva", response_model=HojaVidaReproductivaResponse)
+def get_hoja_vida_reproductiva(
+    animal_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """
+    Genealogía legible, descendencia y línea de tiempo reproductiva del animal.
+    """
+    animal = db.query(Animal).filter(
+        Animal.id == animal_id,
+        Animal.finca_id == current_user.finca_id,
+    ).first()
+
+    if not animal:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Animal no encontrado",
+        )
+
+    return build_hoja_vida_reproductiva(db, animal, current_user.finca_id)

@@ -3,7 +3,9 @@ import type {
   ControlSanitario, 
   ControlSanitarioCreate, 
   ControlSanitarioUpdate,
-  ControlSanitarioListResponse 
+  ControlSanitarioListResponse,
+  AplicarVacunaPayload,
+  AplicarVacunaResponse,
 } from '../types/sanitario';
 
 export const sanitariosService = {
@@ -49,5 +51,18 @@ export const sanitariosService = {
       params: { animal_id: animalId, limit: 100 }
     });
     return response.data.items;
+  },
+
+  getHistorialAnimal: async (animalId: number): Promise<ControlSanitario[]> => {
+    const response = await apiClient.get<ControlSanitarioListResponse>(
+      `/control-sanitario/animal/${animalId}/historial`,
+      { params: { limit: 100 } },
+    );
+    return response.data.items;
+  },
+
+  aplicarVacuna: async (registroId: number, data: AplicarVacunaPayload): Promise<AplicarVacunaResponse> => {
+    const response = await apiClient.post(`/control-sanitario/${registroId}/aplicar-vacuna`, data);
+    return response.data;
   },
 };

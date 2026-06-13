@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { reproductivosService } from '../api/reproductivos';
 import { animalesService } from '../api/animales';
-import type { ControlReproductivo, ControlReproductivoCreate } from '../types/reproductivo';
+import type { ControlReproductivo, ControlReproductivoCreate, CriaPartoInventario, PartoPrefill } from '../types/reproductivo';
 import type { Animal } from '../types/animal';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
+import { createEmptyCria, syncCriasCount, criaRequiereInventario, validarCriasParto } from '../utils/partoCrias';
+import { calcularFppDesdeDiagnostico } from '../utils/gestacion';
+import { isOfflineQueued } from '../types';
 import { Baby, Microscope, SquarePen, Stethoscope, Syringe } from 'lucide-react';
 
 interface ControlReproductivoModalProps {
@@ -11,16 +14,19 @@ interface ControlReproductivoModalProps {
   onClose: () => void;
   onSave: () => void;
   control?: ControlReproductivo | null;
+  partoPrefill?: PartoPrefill | null;
 }
 
-export default function ControlReproductivoModal({ isOpen, onClose, onSave, control }: ControlReproductivoModalProps) {
+export default function ControlReproductivoModal({ isOpen, onClose, onSave, control, partoPrefill }: ControlReproductivoModalProps) {
   const modalTitleId = 'control-reproductivo-modal-title';
   const modalRef = useRef<HTMLDivElement>(null);
   const initialFocusRef = useRef<HTMLSelectElement>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [hembras, setHembras] = useState<Animal[]>([]);
   const [machos, setMachos] = useState<Animal[]>([]);
+  const [crias, setCrias] = useState<CriaPartoInventario[]>([createEmptyCria()]);
   
   const [formData, setFormData] = useState<any>({
     animal_id: '',
@@ -36,7 +42,7 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
     dias_gestacion: '',
     fecha_probable_parto: '',
     tipo_parto: '',
-    numero_crias: '',
+    numero_crias: '1',
     sexo_cria: '',
     peso_cria: '',
     facilidad_parto: '',
@@ -55,6 +61,8 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
   useModalFocusTrap(isOpen, onClose, modalRef, initialFocusRef);
 
   useEffect(() => {
+    if (!isOpen) return;
+
     if (control) {
       setFormData({
         animal_id: control.animal_id,
@@ -79,10 +87,42 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
         costo: control.costo || '',
         observaciones: control.observaciones || '',
       });
-    } else {
-      resetForm();
+      return;
     }
-  }, [control, isOpen]);
+
+    if (partoPrefill) {
+      const madre = hembras.find((h) => h.id === partoPrefill.animal_id);
+      setFormData({
+        animal_id: partoPrefill.animal_id,
+        tipo_evento: 'parto',
+        fecha_evento: new Date().toISOString().split('T')[0],
+        toro_id: partoPrefill.toro_id || '',
+        tipo_servicio: '',
+        numero_servicio: '',
+        pajuela_utilizada: '',
+        toro_pajuela: '',
+        diagnostico: '',
+        metodo_diagnostico: '',
+        dias_gestacion: '',
+        fecha_probable_parto: '',
+        tipo_parto: '',
+        numero_crias: '1',
+        sexo_cria: '',
+        peso_cria: '',
+        facilidad_parto: '',
+        vitalidad_cria: '',
+        veterinario: '',
+        costo: '',
+        observaciones: '',
+      });
+      setCrias([createEmptyCria(madre)]);
+      setSuccessMessage('');
+      setError('');
+      return;
+    }
+
+    resetForm();
+  }, [control, partoPrefill, isOpen, hembras]);
 
   const resetForm = () => {
     setFormData({
@@ -99,7 +139,7 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
       dias_gestacion: '',
       fecha_probable_parto: '',
       tipo_parto: '',
-      numero_crias: '',
+      numero_crias: '1',
       sexo_cria: '',
       peso_cria: '',
       facilidad_parto: '',
@@ -108,6 +148,22 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
       costo: '',
       observaciones: '',
     });
+    setCrias([createEmptyCria()]);
+    setSuccessMessage('');
+    setError('');
+  };
+
+  useEffect(() => {
+    if (!isOpen || control || formData.tipo_evento !== 'parto') return;
+    const count = parseInt(formData.numero_crias, 10) || 1;
+    const madre = hembras.find((h) => String(h.id) === String(formData.animal_id));
+    setCrias((prev) => syncCriasCount(prev, count, madre));
+  }, [formData.numero_crias, formData.animal_id, formData.tipo_evento, isOpen, control, hembras]);
+
+  const updateCria = (index: number, patch: Partial<CriaPartoInventario>) => {
+    setCrias((prev) =>
+      prev.map((c, i) => (i === index ? { ...c, ...patch } : c)),
+    );
   };
 
   const loadAnimales = async () => {
@@ -125,9 +181,27 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccessMessage('');
     setLoading(true);
 
     try {
+      const isPartoNuevo = !control && formData.tipo_evento === 'parto';
+
+      if (isPartoNuevo && !navigator.onLine) {
+        setError('Registrar un parto con crías requiere conexión para crear los animales en inventario.');
+        setLoading(false);
+        return;
+      }
+
+      if (isPartoNuevo) {
+        const validationError = validarCriasParto(crias);
+        if (validationError) {
+          setError(validationError);
+          setLoading(false);
+          return;
+        }
+      }
+
       const data: ControlReproductivoCreate = {
         animal_id: parseInt(formData.animal_id),
         tipo_evento: formData.tipo_evento,
@@ -142,24 +216,62 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
         dias_gestacion: formData.dias_gestacion ? parseInt(formData.dias_gestacion) : undefined,
         fecha_probable_parto: formData.fecha_probable_parto || undefined,
         tipo_parto: formData.tipo_parto || undefined,
-        numero_crias: formData.numero_crias ? parseInt(formData.numero_crias) : undefined,
-        sexo_cria: formData.sexo_cria || undefined,
-        peso_cria: formData.peso_cria ? parseFloat(formData.peso_cria) : undefined,
         facilidad_parto: formData.facilidad_parto || undefined,
-        vitalidad_cria: formData.vitalidad_cria || undefined,
         veterinario: formData.veterinario || undefined,
         costo: formData.costo ? parseFloat(formData.costo) : undefined,
         observaciones: formData.observaciones || undefined,
       };
 
-      if (control) {
-        await reproductivosService.updateControlReproductivo(control.id, data);
-      } else {
-        await reproductivosService.createControlReproductivo(data);
+      if (isPartoNuevo) {
+        data.crias = crias.map((c) => ({
+          ...c,
+          numero_identificacion: c.numero_identificacion?.trim() || undefined,
+          nombre: c.nombre?.trim() || undefined,
+          sexo: c.sexo || undefined,
+        }));
+      } else if (formData.tipo_evento === 'parto') {
+        data.numero_crias = formData.numero_crias ? parseInt(formData.numero_crias) : undefined;
+        data.sexo_cria = formData.sexo_cria || undefined;
+        data.peso_cria = formData.peso_cria ? parseFloat(formData.peso_cria) : undefined;
+        data.vitalidad_cria = formData.vitalidad_cria || undefined;
       }
-      
-      onSave();
-      onClose();
+
+      if (control) {
+        const response = await reproductivosService.updateControlReproductivo(control.id, data);
+        if (isOfflineQueued(response)) {
+          setSuccessMessage('Registro guardado localmente. Se sincronizará al recuperar conexión.');
+          window.dispatchEvent(new CustomEvent('gd-reproductivo-updated'));
+          onSave();
+          setTimeout(() => onClose(), 1800);
+        } else {
+          window.dispatchEvent(new CustomEvent('gd-reproductivo-updated'));
+          onSave();
+          onClose();
+        }
+      } else {
+        const result = await reproductivosService.createControlReproductivo(data);
+        if (isOfflineQueued(result)) {
+          setSuccessMessage('Registro guardado localmente. Se sincronizará al recuperar conexión.');
+          window.dispatchEvent(new CustomEvent('gd-reproductivo-updated'));
+          onSave();
+          setTimeout(() => onClose(), 1800);
+        } else if (result.crias_creadas?.length) {
+          window.dispatchEvent(new CustomEvent('gd-animales-updated'));
+          window.dispatchEvent(new CustomEvent('gd-reproductivo-updated'));
+          const chapetas = result.crias_creadas
+            .map((c) => c.numero_identificacion)
+            .join(', ');
+          setSuccessMessage(
+            `Parto registrado. Crías dadas de alta en inventario: ${chapetas}`,
+          );
+          onSave();
+          setTimeout(() => onClose(), 1800);
+        } else {
+          window.dispatchEvent(new CustomEvent('gd-reproductivo-updated'));
+          onSave();
+          onClose();
+        }
+      }
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Error al guardar el registro');
     } finally {
@@ -193,7 +305,7 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
               ) : (
                 <Baby className="h-6 w-6 text-brand-700" />
               )}
-              {control ? 'Editar Registro Reproductivo' : 'Nuevo Registro Reproductivo'}
+              {control ? 'Editar Registro Reproductivo' : partoPrefill ? 'Registrar parto' : 'Nuevo Registro Reproductivo'}
             </h2>
             <button
               onClick={onClose}
@@ -204,9 +316,26 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
             </button>
           </div>
 
+          {partoPrefill && !control && (
+            <div className="mb-4 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-900">
+              Nuevo evento de parto para{' '}
+              <strong>
+                {partoPrefill.animal_numero || partoPrefill.animal_id}
+                {partoPrefill.animal_nombre ? ` — ${partoPrefill.animal_nombre}` : ''}
+              </strong>
+              . El diagnóstico de preñez no se modifica; solo se crea el registro del nacimiento.
+            </div>
+          )}
+
           {error && (
             <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-700">
               {error}
+            </div>
+          )}
+
+          {successMessage && (
+            <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-800">
+              {successMessage}
             </div>
           )}
 
@@ -220,9 +349,10 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
                 <select
                   ref={initialFocusRef}
                   required
+                  disabled={Boolean(partoPrefill)}
                   value={formData.animal_id}
                   onChange={(e) => setFormData({ ...formData, animal_id: e.target.value })}
-                  className="gd-input"
+                  className="gd-input disabled:cursor-not-allowed disabled:bg-slate-100"
                 >
                   <option value="">Seleccionar hembra</option>
                   {hembras.map((animal) => (
@@ -239,9 +369,10 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
                 </label>
                 <select
                   required
+                  disabled={Boolean(partoPrefill) || Boolean(control)}
                   value={formData.tipo_evento}
                   onChange={(e) => setFormData({ ...formData, tipo_evento: e.target.value })}
-                  className="gd-input"
+                  className="gd-input disabled:cursor-not-allowed disabled:bg-slate-100"
                 >
                   <option value="servicio">Servicio/Monta</option>
                   <option value="diagnostico">Diagnóstico</option>
@@ -413,7 +544,17 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
                           type="number"
                           min="0"
                           value={formData.dias_gestacion}
-                          onChange={(e) => setFormData({ ...formData, dias_gestacion: e.target.value })}
+                          onChange={(e) => {
+                            const dias = e.target.value;
+                            const patch: Record<string, string> = { dias_gestacion: dias };
+                            if (dias && formData.fecha_evento) {
+                              patch.fecha_probable_parto = calcularFppDesdeDiagnostico(
+                                formData.fecha_evento,
+                                parseInt(dias, 10),
+                              );
+                            }
+                            setFormData({ ...formData, ...patch });
+                          }}
                           className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
                           placeholder="Ej: 60"
                         />
@@ -428,6 +569,9 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
                           onChange={(e) => setFormData({ ...formData, fecha_probable_parto: e.target.value })}
                           className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
                         />
+                        <p className="mt-1 text-xs text-slate-500">
+                          Se calcula sola al ingresar días de gestación. Necesaria para alertas de parto.
+                        </p>
                       </div>
                     </div>
                   )}
@@ -443,7 +587,7 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
                     <Stethoscope className="h-4 w-4 text-brand-700" />
                     Datos del Parto
                   </h3>
-                  
+
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700">
@@ -479,69 +623,278 @@ export default function ControlReproductivoModal({ isOpen, onClose, onSave, cont
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-4 mt-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">
-                        Número de Crías
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="5"
-                        value={formData.numero_crias}
-                        onChange={(e) => setFormData({ ...formData, numero_crias: e.target.value })}
-                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
-                        placeholder="1"
-                      />
-                    </div>
+                  {!control && (
+                    <>
+                      <div className="mt-4 grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">
+                            Número de Crías
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="5"
+                            value={formData.numero_crias || '1'}
+                            onChange={(e) =>
+                              setFormData({ ...formData, numero_crias: e.target.value })
+                            }
+                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
+                          />
+                        </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">
-                        Sexo de la Cría
-                      </label>
-                      <select
-                        value={formData.sexo_cria}
-                        onChange={(e) => setFormData({ ...formData, sexo_cria: e.target.value })}
-                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
-                      >
-                        <option value="">Seleccionar</option>
-                        <option value="macho">Macho</option>
-                        <option value="hembra">Hembra</option>
-                        <option value="multiple">Múltiple</option>
-                      </select>
-                    </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">
+                            Toro / Padre (opcional)
+                          </label>
+                          <select
+                            value={formData.toro_id}
+                            onChange={(e) => setFormData({ ...formData, toro_id: e.target.value })}
+                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
+                          >
+                            <option value="">Inferir del último servicio</option>
+                            {machos.map((animal) => (
+                              <option key={animal.id} value={animal.id}>
+                                {animal.numero_identificacion} - {animal.nombre || 'Sin nombre'}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">
-                        Peso de la Cría (kg)
-                      </label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        value={formData.peso_cria}
-                        onChange={(e) => setFormData({ ...formData, peso_cria: e.target.value })}
-                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
-                        placeholder="35"
-                      />
-                    </div>
-                  </div>
+                      <p className="mt-3 text-sm text-slate-600">
+                        Las crías vivas o débiles se registran automáticamente en el inventario de
+                        animales. Las muertas quedan solo en el evento reproductivo.
+                      </p>
 
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-700">
-                      Vitalidad de la Cría
-                    </label>
-                    <select
-                      value={formData.vitalidad_cria}
-                      onChange={(e) => setFormData({ ...formData, vitalidad_cria: e.target.value })}
-                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
-                    >
-                      <option value="">Seleccionar</option>
-                      <option value="viva">Viva</option>
-                      <option value="muerta">Muerta</option>
-                      <option value="debil">Débil</option>
-                    </select>
-                  </div>
+                      <div className="mt-4 space-y-4">
+                        {crias.map((cria, index) => (
+                          <div
+                            key={index}
+                            className="rounded-xl border border-slate-200 bg-slate-50/80 p-4"
+                          >
+                            <h4 className="mb-3 text-sm font-semibold text-slate-800">
+                              Cría {index + 1}
+                            </h4>
+
+                            <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700">
+                                  Vitalidad *
+                                </label>
+                                <select
+                                  required
+                                  value={cria.vitalidad}
+                                  onChange={(e) =>
+                                    updateCria(index, {
+                                      vitalidad: e.target.value as CriaPartoInventario['vitalidad'],
+                                    })
+                                  }
+                                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
+                                >
+                                  <option value="viva">Viva</option>
+                                  <option value="debil">Débil</option>
+                                  <option value="muerta">Muerta</option>
+                                </select>
+                              </div>
+
+                              {criaRequiereInventario(cria.vitalidad) && (
+                                <>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700">
+                                      Chapeta *
+                                    </label>
+                                    <input
+                                      type="text"
+                                      required
+                                      value={cria.numero_identificacion || ''}
+                                      onChange={(e) =>
+                                        updateCria(index, { numero_identificacion: e.target.value })
+                                      }
+                                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
+                                      placeholder="Ej: C-001"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700">
+                                      Sexo *
+                                    </label>
+                                    <select
+                                      required
+                                      value={cria.sexo || ''}
+                                      onChange={(e) =>
+                                        updateCria(index, {
+                                          sexo: e.target.value as CriaPartoInventario['sexo'],
+                                        })
+                                      }
+                                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
+                                    >
+                                      <option value="">Seleccionar</option>
+                                      <option value="macho">Macho</option>
+                                      <option value="hembra">Hembra</option>
+                                    </select>
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700">
+                                      Nombre
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={cria.nombre || ''}
+                                      onChange={(e) => updateCria(index, { nombre: e.target.value })}
+                                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700">
+                                      Peso al nacer (kg)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      step="0.1"
+                                      min="0"
+                                      value={cria.peso_nacimiento ?? ''}
+                                      onChange={(e) =>
+                                        updateCria(index, {
+                                          peso_nacimiento: e.target.value
+                                            ? parseFloat(e.target.value)
+                                            : undefined,
+                                        })
+                                      }
+                                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700">
+                                      Raza
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={cria.raza || ''}
+                                      onChange={(e) => updateCria(index, { raza: e.target.value })}
+                                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700">
+                                      Lote
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={cria.lote_actual || ''}
+                                      onChange={(e) =>
+                                        updateCria(index, { lote_actual: e.target.value })
+                                      }
+                                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700">
+                                      Potrero
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={cria.potrero_actual || ''}
+                                      onChange={(e) =>
+                                        updateCria(index, { potrero_actual: e.target.value })
+                                      }
+                                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700">
+                                      Propósito
+                                    </label>
+                                    <select
+                                      value={cria.proposito || 'carne'}
+                                      onChange={(e) =>
+                                        updateCria(index, { proposito: e.target.value })
+                                      }
+                                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
+                                    >
+                                      <option value="carne">Carne</option>
+                                      <option value="leche">Leche</option>
+                                      <option value="doble_proposito">Doble propósito</option>
+                                      <option value="reproduccion">Reproducción</option>
+                                    </select>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+
+                            <div className="mt-3">
+                              <label className="block text-sm font-medium text-gray-700">
+                                Observaciones de la cría
+                              </label>
+                              <input
+                                type="text"
+                                value={cria.observaciones || ''}
+                                onChange={(e) =>
+                                  updateCria(index, { observaciones: e.target.value })
+                                }
+                                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500"
+                                placeholder="Notas sobre esta cría"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {control && (
+                    <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">
+                      <div>
+                        <span className="block text-xs font-medium uppercase text-slate-500">
+                          Nº crías
+                        </span>
+                        <span className="text-sm text-slate-800">{control.numero_crias ?? '—'}</span>
+                      </div>
+                      <div>
+                        <span className="block text-xs font-medium uppercase text-slate-500">
+                          Sexo
+                        </span>
+                        <span className="text-sm text-slate-800">{control.sexo_cria ?? '—'}</span>
+                      </div>
+                      <div>
+                        <span className="block text-xs font-medium uppercase text-slate-500">
+                          Peso prom.
+                        </span>
+                        <span className="text-sm text-slate-800">
+                          {control.peso_cria != null ? `${control.peso_cria} kg` : '—'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="block text-xs font-medium uppercase text-slate-500">
+                          Vitalidad
+                        </span>
+                        <span className="text-sm text-slate-800">
+                          {control.vitalidad_cria ?? '—'}
+                        </span>
+                      </div>
+                      {control.crias_creadas && control.crias_creadas.length > 0 && (
+                        <div className="col-span-full">
+                          <span className="block text-xs font-medium uppercase text-slate-500">
+                            Crías en inventario
+                          </span>
+                          <span className="text-sm text-slate-800">
+                            {control.crias_creadas
+                              .map((c) => c.numero_identificacion)
+                              .join(', ')}
+                          </span>
+                        </div>
+                      )}
+                      <p className="col-span-full text-sm text-slate-500">
+                        El alta de crías en inventario solo aplica al registrar un parto nuevo.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </>
             )}

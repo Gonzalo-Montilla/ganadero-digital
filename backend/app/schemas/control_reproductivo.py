@@ -3,7 +3,7 @@ Schemas para Control Reproductivo (servicios, diagnósticos, partos)
 """
 from datetime import date, datetime
 from typing import Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ============================================
@@ -71,13 +71,65 @@ class ControlReproductivoBase(BaseModel):
         return v.lower()
 
 
+class CriaPartoInventario(BaseModel):
+    """Datos de cada cría al registrar un parto."""
+    vitalidad: str = Field(..., description="viva, muerta, debil")
+    numero_identificacion: Optional[str] = Field(None, description="Chapeta / arete")
+    nombre: Optional[str] = None
+    sexo: Optional[str] = Field(None, description="macho, hembra")
+    peso_nacimiento: Optional[float] = Field(None, gt=0)
+    color: Optional[str] = None
+    raza: Optional[str] = None
+    lote_actual: Optional[str] = None
+    potrero_actual: Optional[str] = None
+    proposito: Optional[str] = None
+    observaciones: Optional[str] = Field(None, max_length=500)
+
+    @field_validator("vitalidad")
+    @classmethod
+    def validar_vitalidad(cls, v: str) -> str:
+        opciones = {"viva", "muerta", "debil"}
+        if v.lower() not in opciones:
+            raise ValueError(f"Vitalidad debe ser una de: {', '.join(sorted(opciones))}")
+        return v.lower()
+
+    @field_validator("sexo")
+    @classmethod
+    def validar_sexo(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        if v.lower() not in {"macho", "hembra"}:
+            raise ValueError("Sexo debe ser macho o hembra")
+        return v.lower()
+
+
+class CriaCreadaResponse(BaseModel):
+    id: int
+    numero_identificacion: str
+    sexo: str
+    nombre: Optional[str] = None
+
+
 # ============================================
 # Create Schemas
 # ============================================
 
 class ControlReproductivoCreate(ControlReproductivoBase):
     """Schema para crear un registro reproductivo"""
-    pass
+    crias: Optional[list[CriaPartoInventario]] = Field(
+        None,
+        description="Detalle por cría; obligatorio al crear un parto",
+    )
+
+    @model_validator(mode="after")
+    def validar_parto_con_crias(self) -> "ControlReproductivoCreate":
+        if self.tipo_evento != "parto":
+            return self
+        if not self.crias:
+            raise ValueError("Al registrar un parto debe indicar al menos una cría")
+        if self.numero_crias and len(self.crias) != self.numero_crias:
+            raise ValueError("El número de crías no coincide con el detalle enviado")
+        return self
 
 
 # ============================================
@@ -128,6 +180,7 @@ class ControlReproductivoResponse(ControlReproductivoInDB):
     animal_nombre: Optional[str] = None
     toro_numero: Optional[str] = None
     toro_nombre: Optional[str] = None
+    crias_creadas: list[CriaCreadaResponse] = Field(default_factory=list)
 
 
 # ============================================

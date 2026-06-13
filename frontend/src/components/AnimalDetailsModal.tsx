@@ -1,10 +1,15 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { sanitariosService } from '../api/sanitarios';
+import { animalesService } from '../api/animales';
 import type { Animal } from '../types/animal';
+import type { ControlSanitario } from '../types/sanitario';
+import type { HojaVidaReproductiva } from '../types/hojaVida';
+import { formatAnimalResumen, labelTipoEventoReproductivo } from '../types/hojaVida';
 import { getMediaUrl } from '../utils/mediaUrl';
 import AuthenticatedImage from './AuthenticatedImage';
-import { Beef, ClipboardList, Download, MapPin, Scale, ScrollText, Users } from 'lucide-react';
+import { Baby, Beef, ClipboardList, Download, HeartPulse, MapPin, Scale, ScrollText, Users } from 'lucide-react';
 
 interface AnimalDetailsModalProps {
   isOpen: boolean;
@@ -14,6 +19,57 @@ interface AnimalDetailsModalProps {
 
 export default function AnimalDetailsModal({ isOpen, onClose, animal }: AnimalDetailsModalProps) {
   const modalContentRef = useRef<HTMLDivElement>(null);
+  const [historialSanitario, setHistorialSanitario] = useState<ControlSanitario[]>([]);
+  const [loadingHistorial, setLoadingHistorial] = useState(false);
+  const [hojaVidaReproductiva, setHojaVidaReproductiva] = useState<HojaVidaReproductiva | null>(null);
+  const [loadingHojaVida, setLoadingHojaVida] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen || !animal) {
+      setHistorialSanitario([]);
+      setHojaVidaReproductiva(null);
+      return;
+    }
+
+    let cancelado = false;
+    const cargarHistorial = async () => {
+      try {
+        setLoadingHistorial(true);
+        const items = await sanitariosService.getHistorialAnimal(animal.id);
+        if (!cancelado) {
+          setHistorialSanitario(items);
+        }
+      } catch (error) {
+        console.error('Error cargando hoja de vida sanitaria:', error);
+      } finally {
+        if (!cancelado) {
+          setLoadingHistorial(false);
+        }
+      }
+    };
+
+    const cargarHojaVidaReproductiva = async () => {
+      try {
+        setLoadingHojaVida(true);
+        const data = await animalesService.getHojaVidaReproductiva(animal.id);
+        if (!cancelado) {
+          setHojaVidaReproductiva(data);
+        }
+      } catch (error) {
+        console.error('Error cargando hoja de vida reproductiva:', error);
+      } finally {
+        if (!cancelado) {
+          setLoadingHojaVida(false);
+        }
+      }
+    };
+
+    void cargarHistorial();
+    void cargarHojaVidaReproductiva();
+    return () => {
+      cancelado = true;
+    };
+  }, [isOpen, animal?.id]);
   
   if (!isOpen || !animal) return null;
 
@@ -196,7 +252,7 @@ export default function AnimalDetailsModal({ isOpen, onClose, animal }: AnimalDe
           </div>
 
           {/* Genealogía */}
-          {(animal.madre_id || animal.padre_id) && (
+          {(hojaVidaReproductiva?.madre || hojaVidaReproductiva?.padre || animal.madre_id || animal.padre_id) && (
             <div className="mt-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">
                 <span className="inline-flex items-center gap-2">
@@ -204,22 +260,188 @@ export default function AnimalDetailsModal({ isOpen, onClose, animal }: AnimalDe
                   Genealogía
                 </span>
               </h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="bg-pink-50 p-4 rounded-lg">
                   <dt className="text-sm font-medium text-gray-500">Madre</dt>
-                  <dd className="mt-1 text-sm text-gray-900">
-                    {animal.madre_id ? `ID: ${animal.madre_id}` : '-'}
+                  <dd className="mt-1 text-sm font-semibold text-gray-900">
+                    {hojaVidaReproductiva?.madre
+                      ? formatAnimalResumen(hojaVidaReproductiva.madre)
+                      : animal.madre_id
+                      ? `ID: ${animal.madre_id}`
+                      : '-'}
                   </dd>
                 </div>
                 <div className="bg-blue-50 p-4 rounded-lg">
                   <dt className="text-sm font-medium text-gray-500">Padre</dt>
-                  <dd className="mt-1 text-sm text-gray-900">
-                    {animal.padre_id ? `ID: ${animal.padre_id}` : '-'}
+                  <dd className="mt-1 text-sm font-semibold text-gray-900">
+                    {hojaVidaReproductiva?.padre
+                      ? formatAnimalResumen(hojaVidaReproductiva.padre)
+                      : animal.padre_id
+                      ? `ID: ${animal.padre_id}`
+                      : '-'}
                   </dd>
                 </div>
               </div>
             </div>
           )}
+
+          {/* Descendencia */}
+          {hojaVidaReproductiva &&
+            (hojaVidaReproductiva.crias_en_inventario.length > 0 ||
+              hojaVidaReproductiva.progenie_como_padre.length > 0) && (
+              <div className="mt-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  <span className="inline-flex items-center gap-2">
+                    <Baby className="h-5 w-5 text-brand-700" />
+                    Descendencia
+                  </span>
+                </h3>
+                <div className="space-y-4">
+                  {hojaVidaReproductiva.crias_en_inventario.length > 0 && (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-4">
+                      <p className="text-sm font-semibold text-emerald-900">Crías en inventario</p>
+                      <ul className="mt-2 space-y-2">
+                        {hojaVidaReproductiva.crias_en_inventario.map((cria) => (
+                          <li key={cria.id} className="text-sm text-gray-800">
+                            <span className="font-medium">{formatAnimalResumen(cria)}</span>
+                            {cria.fecha_nacimiento ? (
+                              <span className="text-gray-600">
+                                {' '}
+                                — nació el {formatDate(cria.fecha_nacimiento)}
+                              </span>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {hojaVidaReproductiva.progenie_como_padre.length > 0 && (
+                    <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-4">
+                      <p className="text-sm font-semibold text-blue-900">Progenie como padre</p>
+                      <ul className="mt-2 space-y-2">
+                        {hojaVidaReproductiva.progenie_como_padre.map((cria) => (
+                          <li key={cria.id} className="text-sm text-gray-800">
+                            <span className="font-medium">{formatAnimalResumen(cria)}</span>
+                            {cria.fecha_nacimiento ? (
+                              <span className="text-gray-600">
+                                {' '}
+                                — nació el {formatDate(cria.fecha_nacimiento)}
+                              </span>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+          {/* Hoja de vida reproductiva */}
+          <div className="mt-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              <span className="inline-flex items-center gap-2">
+                <Baby className="h-5 w-5 text-brand-700" />
+                Hoja de vida reproductiva
+              </span>
+            </h3>
+            {loadingHojaVida ? (
+              <p className="text-sm text-gray-500">Cargando historial reproductivo...</p>
+            ) : !hojaVidaReproductiva || hojaVidaReproductiva.eventos.length === 0 ? (
+              <p className="rounded-lg bg-gray-50 p-4 text-sm text-gray-600">
+                {animal.sexo === 'hembra'
+                  ? 'Sin servicios, diagnósticos o partos registrados todavía.'
+                  : 'Sin participación registrada como toro en servicios o partos.'}
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {hojaVidaReproductiva.eventos.map((evento) => (
+                  <div key={evento.id} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="font-semibold text-gray-900">
+                          {labelTipoEventoReproductivo(evento.tipo_evento)}
+                        </p>
+                        {evento.tipo_evento === 'diagnostico' && evento.diagnostico && (
+                          <p className="text-sm capitalize text-green-700">{evento.diagnostico}</p>
+                        )}
+                        {evento.tipo_evento === 'servicio' && (
+                          <p className="text-sm text-gray-700">
+                            {evento.tipo_servicio?.replace(/_/g, ' ') || 'Servicio'}
+                            {evento.toro_numero || evento.toro_nombre
+                              ? ` · Toro: ${evento.toro_numero || evento.toro_nombre}${evento.toro_nombre && evento.toro_numero ? ` (${evento.toro_nombre})` : ''}`
+                              : ''}
+                          </p>
+                        )}
+                        {evento.tipo_evento === 'parto' && (
+                          <p className="text-sm text-gray-700">
+                            {evento.numero_crias ? `${evento.numero_crias} cría(s)` : 'Parto registrado'}
+                            {evento.tipo_parto ? ` · ${evento.tipo_parto.replace(/_/g, ' ')}` : ''}
+                          </p>
+                        )}
+                        {evento.hembra_numero && (
+                          <p className="text-sm text-gray-700">
+                            Hembra: {evento.hembra_numero}
+                            {evento.hembra_nombre ? ` — ${evento.hembra_nombre}` : ''}
+                          </p>
+                        )}
+                      </div>
+                      <p className="text-sm font-medium text-gray-600">{formatDate(evento.fecha_evento)}</p>
+                    </div>
+                    {evento.crias_registradas.length > 0 && (
+                      <div className="mt-3 rounded-md bg-white px-3 py-2 text-sm text-gray-800">
+                        <p className="font-medium text-gray-700">Crías dadas de alta:</p>
+                        <ul className="mt-1 space-y-1">
+                          {evento.crias_registradas.map((cria) => (
+                            <li key={cria.id}>{formatAnimalResumen(cria)}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Hoja de vida sanitaria */}
+          <div className="mt-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              <span className="inline-flex items-center gap-2">
+                <HeartPulse className="h-5 w-5 text-brand-700" />
+                Hoja de vida sanitaria
+              </span>
+            </h3>
+            {loadingHistorial ? (
+              <p className="text-sm text-gray-500">Cargando historial...</p>
+            ) : historialSanitario.length === 0 ? (
+              <p className="rounded-lg bg-gray-50 p-4 text-sm text-gray-600">
+                Sin registros sanitarios todavía.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {historialSanitario.map((registro) => (
+                  <div key={registro.id} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="font-semibold text-gray-900 capitalize">{registro.tipo}</p>
+                        <p className="text-sm text-gray-700">{registro.producto || 'Sin producto'}</p>
+                      </div>
+                      <p className="text-sm font-medium text-gray-600">{formatDate(registro.fecha)}</p>
+                    </div>
+                    <div className="mt-2 grid gap-1 text-xs text-gray-600 md:grid-cols-2">
+                      {registro.dosis ? <p>Dosis: {registro.dosis}</p> : null}
+                      {registro.veterinario ? <p>Aplicada por: {registro.veterinario}</p> : null}
+                      {registro.proxima_dosis ? (
+                        <p className="text-orange-700">Próxima dosis: {formatDate(registro.proxima_dosis)}</p>
+                      ) : null}
+                      {registro.observaciones ? <p className="md:col-span-2">{registro.observaciones}</p> : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Observaciones */}
           {animal.observaciones && (

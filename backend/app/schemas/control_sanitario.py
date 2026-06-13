@@ -58,6 +58,30 @@ class ControlSanitarioCreate(ControlSanitarioBase):
     pass
 
 
+class AplicarVacunaRequest(BaseModel):
+    """Registrar aplicación de una vacuna/refuerzo programado"""
+    fecha_aplicacion: date = Field(..., description="Fecha en que se aplicó la vacuna")
+    veterinario: Optional[str] = Field(None, description="Quién aplicó la vacuna")
+    dosis: Optional[str] = None
+    via_administracion: Optional[str] = None
+    lote_producto: Optional[str] = None
+    proxima_dosis: Optional[date] = Field(None, description="Próximo refuerzo programado")
+    dias_retiro_leche: Optional[int] = Field(None, ge=0)
+    dias_retiro_carne: Optional[int] = Field(None, ge=0)
+    costo: Optional[float] = Field(None, ge=0)
+    observaciones: Optional[str] = Field(None, max_length=1000)
+
+    @field_validator('via_administracion')
+    @classmethod
+    def validar_via_aplicar(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        vias_validas = ['intramuscular', 'subcutanea', 'oral', 'topica', 'intravenosa', 'intramamaria']
+        if v.lower() not in vias_validas:
+            raise ValueError(f'Vía debe ser una de: {", ".join(vias_validas)}')
+        return v.lower()
+
+
 # ============================================
 # Update Schemas
 # ============================================
@@ -100,6 +124,13 @@ class ControlSanitarioResponse(ControlSanitarioInDB):
     """Schema de respuesta con información adicional"""
     animal_numero: Optional[str] = None
     animal_nombre: Optional[str] = None
+
+
+class AplicarVacunaResponse(BaseModel):
+    """Resultado de registrar una aplicación de vacuna"""
+    registro_aplicacion: ControlSanitarioResponse
+    registro_programacion_id: int
+    message: str
 
 
 # ============================================

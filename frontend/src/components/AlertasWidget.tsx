@@ -8,6 +8,17 @@ export default function AlertasWidget() {
 
   useEffect(() => {
     loadAlertas();
+    const onSanidadUpdated = () => {
+      void loadAlertas();
+    };
+    window.addEventListener('gd-sanidad-updated', onSanidadUpdated);
+    window.addEventListener('gd-reproductivo-updated', onSanidadUpdated);
+    window.addEventListener('gd-animales-updated', onSanidadUpdated);
+    return () => {
+      window.removeEventListener('gd-sanidad-updated', onSanidadUpdated);
+      window.removeEventListener('gd-reproductivo-updated', onSanidadUpdated);
+      window.removeEventListener('gd-animales-updated', onSanidadUpdated);
+    };
   }, []);
 
   const loadAlertas = async () => {
@@ -61,7 +72,7 @@ export default function AlertasWidget() {
       <div className="flex justify-between items-center mb-4">
         <h2 className="flex items-center gap-2 text-xl font-bold text-slate-900">
           <Bell className="h-5 w-5 text-brand-700" />
-          Alertas de accion
+          Alertas de acción
         </h2>
         <span className="gd-pill bg-slate-100 text-slate-700">{alertas.length} activas</span>
       </div>
@@ -87,10 +98,10 @@ export default function AlertasWidget() {
                       {alerta.titulo}
                     </h3>
                     <p className="text-xs text-gray-600 truncate">
-                      {alerta.descripcion}
+                      {alerta.descripcionCorta}
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
-                      {new Date(alerta.fecha).toLocaleDateString('es-CO')}
+                      {alerta.urgenciaTexto}
                     </p>
                   </div>
                   {alerta.prioridad === 'alta' && (

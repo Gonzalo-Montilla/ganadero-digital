@@ -1,13 +1,17 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { sanitariosService } from '../api/sanitarios';
 import ControlSanitarioModal from '../components/ControlSanitarioModal';
+import AplicarVacunaModal from '../components/AplicarVacunaModal';
 import type { ControlSanitario } from '../types/sanitario';
 import { useAuth } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
+import { vacunaPendienteAplicar } from '../utils/vacunaPendiente';
 
 export default function ControlSanitarioPage() {
   const { user, logout } = useAuth();
   const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+  const [searchParams, setSearchParams] = useSearchParams();
   const [controles, setControles] = useState<ControlSanitario[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -15,14 +19,66 @@ export default function ControlSanitarioPage() {
   // Filtros
   const [filtroTipo, setFiltroTipo] = useState('');
   const [filtroAnimal, setFiltroAnimal] = useState('');
+  const [filtroAnimalId, setFiltroAnimalId] = useState<number | null>(null);
   
   // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedControl, setSelectedControl] = useState<ControlSanitario | null>(null);
+  const [isAplicarModalOpen, setIsAplicarModalOpen] = useState(false);
+  const [registroAplicar, setRegistroAplicar] = useState<ControlSanitario | null>(null);
+  const [accionProcesada, setAccionProcesada] = useState(false);
 
   useEffect(() => {
     loadControles();
   }, [filtroTipo]);
+
+  useEffect(() => {
+    const animalIdParam = searchParams.get('animal_id');
+    const animalNumero = searchParams.get('animal_numero');
+    const accion = searchParams.get('accion');
+
+    if (animalIdParam) {
+      const parsed = Number(animalIdParam);
+      if (Number.isFinite(parsed)) {
+        setFiltroAnimalId(parsed);
+      }
+    }
+    if (animalNumero) {
+      setFiltroAnimal(animalNumero);
+    }
+
+    if (!accion && (animalIdParam || animalNumero)) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('animal_id');
+      nextParams.delete('animal_numero');
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (loading || accionProcesada) return;
+    const accion = searchParams.get('accion');
+    const animalIdParam = searchParams.get('animal_id');
+    if (accion !== 'aplicar_vacuna' || !animalIdParam) return;
+
+    const animalId = Number(animalIdParam);
+    if (!Number.isFinite(animalId)) return;
+
+    const pendiente = controles.find(
+      (c) => c.animal_id === animalId && vacunaPendienteAplicar(c),
+    );
+    if (pendiente) {
+      setRegistroAplicar(pendiente);
+      setIsAplicarModalOpen(true);
+    }
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('animal_id');
+    nextParams.delete('animal_numero');
+    nextParams.delete('accion');
+    setSearchParams(nextParams, { replace: true });
+    setAccionProcesada(true);
+  }, [loading, controles, searchParams, accionProcesada]);
 
   const loadControles = async () => {
     try {
@@ -49,6 +105,47 @@ export default function ControlSanitarioPage() {
     setSelectedControl(control);
     setIsModalOpen(true);
   };
+
+  const handleAplicarVacuna = (control: ControlSanitario) => {
+    setRegistroAplicar(control);
+    setIsAplicarModalOpen(true);
+  };
+
+  const renderAcciones = (control: ControlSanitario, compact = false) => (
+    <div className={compact ? 'mt-3 flex flex-wrap gap-2' : 'whitespace-nowrap text-right text-sm font-medium'}>
+      {vacunaPendienteAplicar(control) ? (
+        <button
+          type="button"
+          onClick={() => handleAplicarVacuna(control)}
+          className={
+            compact
+              ? 'rounded-xl bg-brand-600 px-3 py-2 text-xs font-bold text-white hover:bg-brand-700'
+              : 'mr-3 font-semibold text-brand-700 hover:text-brand-900'
+          }
+        >
+          Aplicar vacuna
+        </button>
+      ) : null}
+      <button
+        type="button"
+        onClick={() => handleEditar(control)}
+        className={compact ? 'gd-btn-secondary !px-3 !py-2 text-xs' : 'text-sky-600 hover:text-sky-800 mr-3'}
+      >
+        Editar
+      </button>
+      <button
+        type="button"
+        onClick={() => handleEliminar(control.id)}
+        className={
+          compact
+            ? 'rounded-xl border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50'
+            : 'text-red-600 hover:text-red-900'
+        }
+      >
+        Eliminar
+      </button>
+    </div>
+  );
 
   const handleEliminar = async (id: number) => {
     if (!confirm('¿Estás seguro de eliminar este registro?')) return;
@@ -92,12 +189,18 @@ export default function ControlSanitarioPage() {
   };
 
   // Filtrar localmente por animal
-  const controlesFiltrados = filtroAnimal
-    ? controles.filter((c) =>
-        c.animal_numero?.toLowerCase().includes(filtroAnimal.toLowerCase()) ||
-        c.animal_nombre?.toLowerCase().includes(filtroAnimal.toLowerCase())
-      )
-    : controles;
+  const controlesFiltrados = controles.filter((c) => {
+    if (filtroAnimalId != null && c.animal_id !== filtroAnimalId) {
+      return false;
+    }
+    if (!filtroAnimal) {
+      return true;
+    }
+    return (
+      c.animal_numero?.toLowerCase().includes(filtroAnimal.toLowerCase()) ||
+      c.animal_nombre?.toLowerCase().includes(filtroAnimal.toLowerCase())
+    );
+  });
 
   return (
     <AppShell
@@ -150,6 +253,9 @@ export default function ControlSanitarioPage() {
             <div className="flex items-end">
               <div className="text-sm text-slate-600">
                 <strong>{controlesFiltrados.length}</strong> de <strong>{total}</strong> registros
+                {filtroAnimalId != null ? (
+                  <span className="ml-2 gd-pill bg-brand-100 text-brand-800">Filtrado por alerta</span>
+                ) : null}
               </div>
             </div>
           </div>
@@ -189,10 +295,7 @@ export default function ControlSanitarioPage() {
                     <p className="mt-2 text-sm text-slate-700">{control.producto || 'Sin producto'}</p>
                     {control.veterinario ? <p className="text-xs text-slate-500">Vet: {control.veterinario}</p> : null}
                     {control.proxima_dosis ? <p className="text-xs text-orange-600">Próxima: {formatDate(control.proxima_dosis)}</p> : null}
-                    <div className="mt-3 flex gap-2">
-                      <button onClick={() => handleEditar(control)} className="gd-btn-secondary !px-3 !py-2 text-xs">Editar</button>
-                      <button onClick={() => handleEliminar(control.id)} className="rounded-xl border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50">Eliminar</button>
-                    </div>
+                    {renderAcciones(control, true)}
                   </article>
                 ))}
               </div>
@@ -232,8 +335,7 @@ export default function ControlSanitarioPage() {
                           {control.proxima_dosis ? <span className="text-orange-600 font-medium">{formatDate(control.proxima_dosis)}</span> : <span className="text-slate-400">-</span>}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          <button onClick={() => handleEditar(control)} className="text-sky-600 hover:text-sky-800 mr-3">Editar</button>
-                          <button onClick={() => handleEliminar(control.id)} className="text-red-600 hover:text-red-900">Eliminar</button>
+                          {renderAcciones(control)}
                         </td>
                       </tr>
                     ))}
@@ -251,6 +353,16 @@ export default function ControlSanitarioPage() {
         onClose={() => setIsModalOpen(false)}
         onSave={handleModalSave}
         control={selectedControl}
+      />
+
+      <AplicarVacunaModal
+        isOpen={isAplicarModalOpen}
+        onClose={() => {
+          setIsAplicarModalOpen(false);
+          setRegistroAplicar(null);
+        }}
+        onSaved={handleModalSave}
+        registro={registroAplicar}
       />
     </AppShell>
   );

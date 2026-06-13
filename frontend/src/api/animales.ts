@@ -2,6 +2,7 @@ import apiClient from './client';
 
 import type { OfflineQueuedResponse } from '../types';
 import type { Animal, AnimalCreate, AnimalUpdate, AnimalesListResponse } from '../types/animal';
+import type { HojaVidaReproductiva } from '../types/hojaVida';
 import { enqueuePhoto } from '../offline/photoQueue';
 
 
@@ -85,6 +86,16 @@ export const animalesService = {
   getAnimal: async (id: number): Promise<Animal> => {
 
     const response = await apiClient.get(`/animales/${id}`);
+
+    return response.data;
+
+  },
+
+
+
+  getHojaVidaReproductiva: async (id: number): Promise<HojaVidaReproductiva> => {
+
+    const response = await apiClient.get<HojaVidaReproductiva>(`/animales/${id}/hoja-vida-reproductiva`);
 
     return response.data;
 

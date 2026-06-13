@@ -14,6 +14,16 @@ def calcular_fecha_probable_parto(fecha_servicio: date, dias_gestacion: int = GE
     return fecha_servicio + timedelta(days=dias_gestacion)
 
 
+def calcular_fpp_desde_diagnostico(
+    fecha_diagnostico: date,
+    dias_gestacion: int,
+    dias_gestacion_total: int = GESTATION_DAYS_DEFAULT,
+) -> date:
+    """Estima parto a partir de días de gestación al momento del diagnóstico."""
+    dias_restantes = max(dias_gestacion_total - dias_gestacion, 0)
+    return fecha_diagnostico + timedelta(days=dias_restantes)
+
+
 def calcular_dias_abiertos(ultimo_parto: date | None, hoy: date) -> int | None:
     if ultimo_parto is None:
         return None

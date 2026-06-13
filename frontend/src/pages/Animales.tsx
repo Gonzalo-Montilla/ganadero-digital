@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { animalesService } from '../api/animales';
 import type { Animal } from '../types/animal';
 import { useAuth } from '../context/AuthContext';
@@ -20,9 +21,16 @@ export default function Animales() {
   const [loteDestino, setLoteDestino] = useState('');
   const [potreroDestino, setPotreroDestino] = useState('');
   const { user, logout } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
     loadAnimales();
+  }, [filtroEstado]);
+
+  useEffect(() => {
+    const onAnimalesUpdated = () => loadAnimales();
+    window.addEventListener('gd-animales-updated', onAnimalesUpdated);
+    return () => window.removeEventListener('gd-animales-updated', onAnimalesUpdated);
   }, [filtroEstado]);
 
   const loadAnimales = async () => {
@@ -72,6 +80,40 @@ export default function Animales() {
     }
     setIsDetailsModalOpen(true);
   };
+
+  useEffect(() => {
+    const animalIdParam = searchParams.get('animal_id');
+    if (!animalIdParam || loading) {
+      return;
+    }
+
+    const animalId = Number(animalIdParam);
+    if (!Number.isFinite(animalId)) {
+      return;
+    }
+
+    const abrirDesdeAlerta = async () => {
+      const enLista = animales.find((item) => item.id === animalId);
+      if (enLista) {
+        await handleView(enLista);
+      } else {
+        try {
+          const freshAnimal = await animalesService.getAnimal(animalId);
+          setSelectedAnimal(freshAnimal);
+          setIsDetailsModalOpen(true);
+        } catch (error) {
+          console.error('No se pudo abrir el animal desde la alerta:', error);
+        }
+      }
+
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('animal_id');
+      nextParams.delete('animal_numero');
+      setSearchParams(nextParams, { replace: true });
+    };
+
+    void abrirDesdeAlerta();
+  }, [loading, animales, searchParams, setSearchParams]);
 
   const toggleSelected = (animalId: number) => {
     setSelectedIds((prev) =>

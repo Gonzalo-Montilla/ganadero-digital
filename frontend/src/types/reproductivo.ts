@@ -39,6 +39,28 @@ export interface ControlReproductivo {
   animal_nombre?: string;
   toro_numero?: string;
   toro_nombre?: string;
+  crias_creadas?: CriaCreadaResponse[];
+}
+
+export interface CriaPartoInventario {
+  vitalidad: 'viva' | 'muerta' | 'debil';
+  numero_identificacion?: string;
+  nombre?: string;
+  sexo?: 'macho' | 'hembra' | '';
+  peso_nacimiento?: number;
+  color?: string;
+  raza?: string;
+  lote_actual?: string;
+  potrero_actual?: string;
+  proposito?: string;
+  observaciones?: string;
+}
+
+export interface CriaCreadaResponse {
+  id: number;
+  numero_identificacion: string;
+  sexo: string;
+  nombre?: string | null;
 }
 
 export interface ControlReproductivoCreate {
@@ -63,6 +85,7 @@ export interface ControlReproductivoCreate {
   veterinario?: string;
   costo?: number;
   observaciones?: string;
+  crias?: CriaPartoInventario[];
 }
 
 export interface ControlReproductivoUpdate {
@@ -86,6 +109,14 @@ export interface ControlReproductivoUpdate {
   veterinario?: string;
   costo?: number;
   observaciones?: string;
+}
+
+export interface PartoPrefill {
+  animal_id: number;
+  animal_numero?: string;
+  animal_nombre?: string | null;
+  toro_id?: number | null;
+  diagnostico_id?: number;
 }
 
 export interface ControlReproductivoListResponse {

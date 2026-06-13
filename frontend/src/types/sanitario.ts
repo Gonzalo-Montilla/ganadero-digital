@@ -72,3 +72,22 @@ export interface ControlSanitarioListResponse {
   skip: number;
   limit: number;
 }
+
+export interface AplicarVacunaPayload {
+  fecha_aplicacion: string;
+  veterinario?: string;
+  dosis?: string;
+  via_administracion?: ControlSanitarioCreate['via_administracion'];
+  lote_producto?: string;
+  proxima_dosis?: string;
+  dias_retiro_leche?: number;
+  dias_retiro_carne?: number;
+  costo?: number;
+  observaciones?: string;
+}
+
+export interface AplicarVacunaResponse {
+  registro_aplicacion: ControlSanitario;
+  registro_programacion_id: number;
+  message: string;
+}

@@ -17,10 +17,17 @@ from app.schemas.control_reproductivo import (
     ControlReproductivoUpdate,
     ControlReproductivoResponse,
     ControlReproductivoListResponse,
-    EstadisticasReproductivas
+    EstadisticasReproductivas,
+    CriaPartoInventario,
 )
 from app.services.rules_engine import calcular_fecha_probable_parto
 from app.services.alertas_service import contar_partos_activos_en_rango
+from app.services.reproductivo_helpers import enriquecer_fecha_probable_parto
+from app.services.parto_service import (
+    crear_animales_desde_parto,
+    resolver_padre_id,
+    sintetizar_resumen_parto,
+)
 
 router = APIRouter()
 
@@ -75,12 +82,31 @@ def crear_registro_reproductivo(
             )
     
     # Crear registro
-    registro_data = registro_in.model_dump()
+    registro_data = registro_in.model_dump(exclude={"crias"})
+    crias_payload: list[CriaPartoInventario] = list(registro_in.crias or [])
+
+    if registro_in.tipo_evento == "parto":
+        numero, sexo_cria, peso_cria, vitalidad_cria = sintetizar_resumen_parto(crias_payload)
+        registro_data["numero_crias"] = numero
+        registro_data["sexo_cria"] = sexo_cria
+        registro_data["peso_cria"] = peso_cria
+        registro_data["vitalidad_cria"] = vitalidad_cria
+        if not registro_data.get("toro_id"):
+            registro_data["toro_id"] = resolver_padre_id(
+                db,
+                current_user.finca_id,
+                registro_in.animal_id,
+                registro_in.fecha_evento,
+                registro_in.toro_id,
+            )
+
     if (
         registro_data.get("tipo_evento") == "servicio"
         and not registro_data.get("fecha_probable_parto")
     ):
         registro_data["fecha_probable_parto"] = calcular_fecha_probable_parto(registro_in.fecha_evento)
+
+    registro_data = enriquecer_fecha_probable_parto(registro_data)
 
     db_registro = ControlReproductivo(
         **registro_data,
@@ -89,16 +115,39 @@ def crear_registro_reproductivo(
     )
     
     db.add(db_registro)
+    db.flush()
+
+    crias_creadas = []
+    if registro_in.tipo_evento == "parto" and crias_payload:
+        padre_id = db_registro.toro_id
+        crias_creadas = crear_animales_desde_parto(
+            db,
+            finca_id=current_user.finca_id,
+            parto_id=db_registro.id,
+            madre=animal,
+            padre_id=padre_id,
+            fecha_parto=registro_in.fecha_evento,
+            crias=crias_payload,
+        )
+
     db.commit()
     db.refresh(db_registro)
+
+    toro_resp = toro
+    if db_registro.toro_id and not toro_resp:
+        toro_resp = db.query(Animal).filter(
+            Animal.id == db_registro.toro_id,
+            Animal.finca_id == current_user.finca_id,
+        ).first()
     
     # Preparar respuesta
     response = ControlReproductivoResponse(
         **db_registro.__dict__,
         animal_numero=animal.numero_identificacion,
         animal_nombre=animal.nombre,
-        toro_numero=toro.numero_identificacion if toro else None,
-        toro_nombre=toro.nombre if toro else None
+        toro_numero=toro_resp.numero_identificacion if toro_resp else None,
+        toro_nombre=toro_resp.nombre if toro_resp else None,
+        crias_creadas=crias_creadas,
     )
     
     return response
@@ -312,10 +361,32 @@ def actualizar_registro_reproductivo(
         )
     
     update_data = registro_in.model_dump(exclude_unset=True)
-    if update_data.get("tipo_evento") == "servicio" and update_data.get("fecha_evento") and not update_data.get("fecha_probable_parto"):
-        update_data["fecha_probable_parto"] = calcular_fecha_probable_parto(update_data["fecha_evento"])
+
+    if "tipo_evento" in update_data and update_data["tipo_evento"] != registro.tipo_evento:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se puede cambiar el tipo de evento. Cree un registro nuevo.",
+        )
+
     for field, value in update_data.items():
         setattr(registro, field, value)
+
+    if "fecha_probable_parto" not in update_data and (
+        "dias_gestacion" in update_data
+        or ("diagnostico" in update_data and registro.diagnostico == "prenada")
+        or (registro.tipo_evento == "servicio" and "fecha_evento" in update_data)
+    ):
+        enriched = enriquecer_fecha_probable_parto(
+            {
+                "tipo_evento": registro.tipo_evento,
+                "fecha_evento": registro.fecha_evento,
+                "diagnostico": registro.diagnostico,
+                "dias_gestacion": registro.dias_gestacion,
+                "fecha_probable_parto": None,
+            }
+        )
+        if enriched.get("fecha_probable_parto"):
+            registro.fecha_probable_parto = enriched["fecha_probable_parto"]
     
     db.commit()
     db.refresh(registro)
